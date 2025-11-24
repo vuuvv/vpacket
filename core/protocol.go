@@ -52,3 +52,12 @@ func (p *Protocol) Parse(packet []byte) (any, error) {
 	}
 	return ctx.Fields, nil
 }
+
+func (p *Protocol) Encode(ctx *Context) ([]byte, error) {
+	for _, node := range p.ParsedFields {
+		if err := node.Encode(ctx); err != nil {
+			return nil, errors.Wrapf(err, "Encode field %s: %s", node.GetName(), err.Error())
+		}
+	}
+	return ctx.Writer.Bytes(), nil
+}

@@ -85,12 +85,52 @@ func ToUint64(val any) (uint64, bool) {
 		return uint64(v), true
 	case uint64:
 		return v, true
+	case float32:
+		return uint64(v), true
+	case float64:
+		return uint64(v), true
 	}
 
 	s := ToString(val)
 	i, err := strconv.ParseInt(s, 10, 64)
-	if err == nil && i >= 0 {
+	if err == nil {
 		return uint64(i), true
+	}
+	return 0, false
+}
+
+func ToFloat64(val any) (float64, bool) {
+	switch v := val.(type) {
+	case int:
+		return float64(v), true
+	case int8:
+		return float64(v), true
+	case int16:
+		return float64(v), true
+	case int32:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	case uint:
+		return float64(v), true
+	case uint8:
+		return float64(v), true
+	case uint16:
+		return float64(v), true
+	case uint32:
+		return float64(v), true
+	case uint64:
+		return float64(v), true
+	case float32:
+		return float64(v), true
+	case float64:
+		return v, true
+	}
+
+	s := ToString(val)
+	i, err := strconv.ParseFloat(s, 64)
+	if err == nil {
+		return i, true
 	}
 	return 0, false
 }
@@ -119,6 +159,67 @@ func ConvertBytesToIntLE(data []byte) (uint64, error) {
 		result |= uint64(data[i]) << (i * 8)
 	}
 	return result, nil
+}
+
+const (
+	PaddingLeft  string = "left"  // 在前面填充
+	PaddingRight string = "right" // 在后面填充
+)
+
+func ResizeBytes(data []byte, size int, padByte byte, position string) []byte {
+	if position == "" {
+		position = PaddingRight
+	}
+
+	if size < 0 {
+		return nil
+	}
+
+	currentLen := len(data)
+
+	// 长度正好
+	if currentLen == size {
+		return data
+	}
+
+	// 需要截断
+	if currentLen > size {
+		return data[:size]
+	}
+
+	// 需要填充
+	needPad := size - currentLen
+
+	// 检查容量是否足够复用
+	if position == PaddingRight && cap(data) >= size {
+		// 在后面填充且容量足够，可以复用数组
+		data = data[:size]
+		for i := currentLen; i < size; i++ {
+			data[i] = padByte
+		}
+		return data
+	}
+
+	// 其他情况需要创建新数组
+	result := make([]byte, size)
+
+	switch position {
+	case PaddingLeft:
+		// 在前面填充
+		for i := 0; i < needPad; i++ {
+			result[i] = padByte
+		}
+		copy(result[needPad:], data)
+
+	case PaddingRight:
+		// 在后面填充
+		copy(result, data)
+		for i := currentLen; i < size; i++ {
+			result[i] = padByte
+		}
+	}
+
+	return result
 }
 
 //func BytesTo(bytes []byte, typ string) any {

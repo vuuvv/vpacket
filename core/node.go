@@ -4,9 +4,24 @@ import (
 	"github.com/vuuvv/errors"
 )
 
+const (
+	NodeTypeBytes  = "bytes"  // 默认类型
+	NodeTypeCalc   = "calc"   // 计算类型
+	NodeTypeIf     = "if"     // 条件类型
+	NodeTypeSwitch = "switch" // switch类型
+	NodeTypeArray  = "array"  // 数组类型
+	NodeTypeStruct = "struct" // 结构类型,嵌套
+	NodeTypeHex    = "hex"
+	NodeTypeString = "string"
+	NodeTypeInt    = "int"
+	NodeTypeUint   = "uint"
+	NodeTypeFloat  = "float"
+)
+
 type Node interface {
 	Decode(ctx *Context) error
-	Encode(input map[string]any, writer *BitWriter) error
+	Encode(ctx *Context) error
+	GetName() string
 	Compile(fields *YamlField, structures DataStructures) error
 }
 

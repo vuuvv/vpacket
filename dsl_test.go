@@ -51,6 +51,42 @@ func TestDsl(t *testing.T) {
 	if err != nil {
 		log.Fatal("Error scanning:", err)
 	}
+
+	text := `
+{
+  "board_id": "BB8CABCD239EBC45E339E339",
+  "command": "C3",
+  "data": {
+    "card_no": "05242",
+    "channel": 1,
+    "end_time": "00000000",
+    "id_len": 5,
+    "room": "000000",
+    "start_time": "00000000",
+    "user_role": 0
+  },
+  "data_crc": 3595,
+  "direction": "BB",
+  "magic": "7273",
+  "product_code": "0000",
+  "version_raw": "0000"
+}
+`
+	fields := map[string]any{}
+	err = json.Unmarshal([]byte(text), &fields)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	bs, err := scanner.Encode(fields)
+
+	if err != nil {
+		fmt.Printf("%+v", err)
+		log.Fatal(err)
+	}
+
+	fmt.Printf(">>> 编码结果: %x\n", bs)
+
 	//var binaryNodes []Node
 	//var allProtocols []*Protocol
 	//var binaryProtocolName string

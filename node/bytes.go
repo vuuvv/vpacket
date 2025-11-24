@@ -3,24 +3,38 @@ package node
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"github.com/vuuvv/errors"
 	"github.com/vuuvv/vpacket/core"
+	"math"
 )
 
-const Bytes = "byte"
-
 type BytesNode struct {
-	Name     string
-	Type     string
-	Size     int
-	SizeExpr *core.CelEvaluator
-	Bits     int
-	Check    *core.CelEvaluator
-	Endian   string
-	Crc      string
-	CrcStart *core.CelEvaluator
-	CrcEnd   *core.CelEvaluator
+	Name        string
+	Type        string
+	Size        int
+	SizeExpr    *core.CelEvaluator
+	Bits        int
+	Check       *core.CelEvaluator
+	Endian      string
+	Crc         string
+	CrcStart    *core.CelEvaluator
+	CrcEnd      *core.CelEvaluator
+	PadByte     byte
+	PadPosition string
+}
+
+func (this *BytesNode) GetName() string {
+	return this.Name
+}
+
+func (this *BytesNode) GetByteOrder() (byteOrder binary.ByteOrder) {
+	byteOrder = binary.BigEndian
+	if this.Endian == "litter" {
+		byteOrder = binary.LittleEndian
+	}
+	return byteOrder
 }
 
 func (this *BytesNode) Decode(ctx *core.Context) (err error) {
@@ -36,7 +50,7 @@ func (this *BytesNode) Decode(ctx *core.Context) (err error) {
 			if err != nil {
 				return errors.Wrapf(err, "Parse field %s: %s", this.Name, err.Error())
 			}
-			ctx.Fields[this.Name] = val
+			ctx.SetField(this.Name, val)
 			return nil
 		} else {
 			this.Size = this.Bits / 8
@@ -50,7 +64,7 @@ func (this *BytesNode) Decode(ctx *core.Context) (err error) {
 	if err != nil {
 		return errors.Wrapf(err, "Parse field %s: %s", this.Name, err.Error())
 	}
-	ctx.Fields[this.Name] = val
+	ctx.SetField(this.Name, val)
 
 	if this.Crc != "" {
 		crcVal, err := this.crc(ctx)
@@ -79,6 +93,32 @@ func (this *BytesNode) Decode(ctx *core.Context) (err error) {
 	return nil
 }
 
+func (this *BytesNode) getSize(ctx *core.Context) (int, error) {
+	size := this.Size
+	if this.SizeExpr != nil {
+		val, err := this.SizeExpr.Execute(ctx)
+		if err != nil {
+			return 0, errors.WithStack(err)
+		}
+		switch v := val.(type) {
+		case int64:
+			size = int(v)
+		case uint64:
+			size = int(v)
+		case float32:
+			size = int(math.Round(float64(v)))
+		case float64:
+			size = int(math.Round(v))
+		default:
+			return 0, errors.Errorf("size expr return invalid type: %T", val)
+		}
+	}
+	if size < 0 {
+		return 0, errors.Errorf("negative size: %d", size)
+	}
+	return size, nil
+}
+
 func (this *BytesNode) readBits(ctx *core.Context) (any, error) {
 	val, err := ctx.ReadBits(this.Bits)
 	if err != nil {
@@ -88,23 +128,9 @@ func (this *BytesNode) readBits(ctx *core.Context) (any, error) {
 }
 
 func (this *BytesNode) readBytes(ctx *core.Context) (any, error) {
-	readSize := this.Size
-	if this.SizeExpr != nil {
-		val, err := this.SizeExpr.Execute(ctx)
-		if err != nil {
-			return nil, errors.WithStack(err)
-		}
-		switch v := val.(type) {
-		case int64:
-			readSize = int(v)
-		case uint64:
-			readSize = int(v)
-		default:
-			return nil, errors.Errorf("size expr return invalid type: %T", val)
-		}
-	}
-	if readSize < 0 {
-		return nil, errors.Errorf("negative size: %d", readSize)
+	readSize, err := this.getSize(ctx)
+	if err != nil {
+		return nil, errors.WithStack(err)
 	}
 	if readSize == 0 {
 		return "", nil
@@ -115,23 +141,20 @@ func (this *BytesNode) readBytes(ctx *core.Context) (any, error) {
 		return nil, errors.WithStack(err)
 	}
 
-	var byteOrder binary.ByteOrder = binary.BigEndian
-	if this.Endian == "litter" {
-		byteOrder = binary.LittleEndian
-	}
+	byteOrder := this.GetByteOrder()
 
 	switch this.Type {
-	case "", "hex":
+	case "", core.NodeTypeHex:
 		return fmt.Sprintf("%02X", bytesVal), nil
-	case "string":
+	case core.NodeTypeString:
 		return string(bytesVal), nil
-	case "int":
+	case core.NodeTypeInt:
 		v, err := core.ConvertBytesToInt(bytesVal, byteOrder)
 		return int64(v), errors.WithStack(err)
-	case "uint":
+	case core.NodeTypeUint:
 		v, err := core.ConvertBytesToInt(bytesVal, byteOrder)
 		return v, errors.WithStack(err)
-	case "float":
+	case core.NodeTypeFloat:
 		bytesLen := len(bytesVal)
 		if bytesLen == 32 {
 			var v float32
@@ -194,9 +217,87 @@ func (this *BytesNode) crc(ctx *core.Context) (uint64, error) {
 	return core.Crc(ctx.Data[startOffset:endOffset], this.Crc)
 }
 
-func (this *BytesNode) Encode(input map[string]any, writer *core.BitWriter) error {
-	//TODO implement me
-	panic("implement me")
+func (this *BytesNode) Encode(ctx *core.Context) error {
+	size, err := this.getSize(ctx)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+
+	if size == 0 {
+		return nil
+	}
+
+	if this.Crc != "" {
+		this.Type = "uint"
+	}
+
+	switch this.Type {
+	case "", core.NodeTypeHex:
+		return this.WriteHex(ctx, size)
+	case core.NodeTypeString:
+		return this.WriteString(ctx, size)
+	case core.NodeTypeInt:
+		return this.WriteUint(ctx, size)
+	case core.NodeTypeUint:
+		return this.WriteUint(ctx, size)
+	case core.NodeTypeFloat:
+		return this.WriteFloat(ctx, size)
+	}
+	return nil
+}
+
+func (this *BytesNode) WriteHex(ctx *core.Context, size int) error {
+	val, ok := ctx.GetField(this.Name)
+	if !ok {
+		return ctx.WritePlaceholder(this.Size)
+	}
+	str, ok := val.(string)
+	if !ok {
+		return errors.Errorf("value of '%s' should be a string, '%v'", this.Name, val)
+	}
+
+	bs, err := hex.DecodeString(str)
+	if err != nil {
+		return errors.Errorf("value of '%s' should be a valid hex string, '%s'", this.Name, str)
+	}
+
+	return ctx.WriteBytes(core.ResizeBytes(bs, size, this.PadByte, this.PadPosition))
+}
+
+func (this *BytesNode) WriteString(ctx *core.Context, size int) error {
+	val, ok := ctx.GetField(this.Name)
+	if !ok {
+		return ctx.WritePlaceholder(this.Size)
+	}
+	str, ok := val.(string)
+	if !ok {
+		return errors.Errorf("value of '%s' should be a string, '%v'", this.Name, val)
+	}
+	return ctx.WriteBytes(core.ResizeBytes([]byte(str), size, this.PadByte, this.PadPosition))
+}
+
+func (this *BytesNode) WriteUint(ctx *core.Context, size int) error {
+	val, ok := ctx.GetField(this.Name)
+	if !ok {
+		return ctx.WritePlaceholder(this.Size)
+	}
+	i, ok := core.ToUint64(val)
+	if !ok {
+		return errors.Errorf("value of '%s' should be a int, '%v'", this.Name, val)
+	}
+	return ctx.WriteInt(i, size, this.GetByteOrder())
+}
+
+func (this *BytesNode) WriteFloat(ctx *core.Context, size int) error {
+	val, ok := ctx.GetField(this.Name)
+	if !ok {
+		return ctx.WritePlaceholder(this.Size)
+	}
+	f, ok := core.ToFloat64(val)
+	if !ok {
+		return errors.Errorf("value of '%s' should be a float, '%v'", this.Name, val)
+	}
+	return ctx.WriteFloat(f, size, this.GetByteOrder())
 }
 
 func (this *BytesNode) Compile(yf *core.YamlField, structures core.DataStructures) error {
@@ -244,5 +345,5 @@ func (this *BytesNode) Compile(yf *core.YamlField, structures core.DataStructure
 }
 
 func registerBytes() {
-	core.RegisterNodeCompilerFactory[BytesNode](Bytes, true)
+	core.RegisterNodeCompilerFactory[BytesNode](core.NodeTypeBytes, true)
 }

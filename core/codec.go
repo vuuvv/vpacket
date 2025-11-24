@@ -23,20 +23,20 @@ type ScanResult struct {
 
 type ScanResultHandler func(result *ScanResult) error
 
-type Scanner struct {
+type Codec struct {
 	config  *Config
 	stream  io.Reader
 	history *LockFreeCircularBuffer
 }
 
-func NewScanner() *Scanner {
-	scanner := &Scanner{}
+func NewCodec() *Codec {
+	scanner := &Codec{}
 	scanner.history = NewLockFreeCircularBuffer(10)
 	return scanner
 }
 
-func NewScannerFromBytes(configBytes []byte) (*Scanner, error) {
-	scanner := NewScanner()
+func NewScannerFromBytes(configBytes []byte) (*Codec, error) {
+	scanner := NewCodec()
 	err := yaml.Unmarshal(configBytes, &scanner.config)
 	if err != nil {
 		return nil, err
@@ -45,8 +45,8 @@ func NewScannerFromBytes(configBytes []byte) (*Scanner, error) {
 	return scanner, err
 }
 
-func NewScannerFromFile(configFile string) (*Scanner, error) {
-	scanner := NewScanner()
+func NewScannerFromFile(configFile string) (*Codec, error) {
+	scanner := NewCodec()
 	f, err := os.Open(configFile)
 	if err != nil {
 		return nil, err
@@ -63,22 +63,22 @@ func NewScannerFromFile(configFile string) (*Scanner, error) {
 	return scanner, err
 }
 
-func (scanner *Scanner) Config(config *Config) *Scanner {
+func (scanner *Codec) Config(config *Config) *Codec {
 	scanner.config = config
 	return scanner
 }
 
-func (scanner *Scanner) Stream(stream io.Reader) *Scanner {
+func (scanner *Codec) Stream(stream io.Reader) *Codec {
 	scanner.stream = stream
 	return scanner
 }
 
-func (scanner *Scanner) AddHistory(history any) *Scanner {
+func (scanner *Codec) AddHistory(history any) *Codec {
 	scanner.history.Add(&WithTime{Time: time.Now(), Data: history})
 	return scanner
 }
 
-func (scanner *Scanner) Histories() []*WithTime {
+func (scanner *Codec) Histories() []*WithTime {
 	histories := scanner.history.GetAll()
 	var res []*WithTime
 	for _, h := range histories {
@@ -89,7 +89,18 @@ func (scanner *Scanner) Histories() []*WithTime {
 	return res
 }
 
-func (this *Scanner) Scan(fn ScanResultHandler) error {
+func (this *Codec) Encode(input map[string]any) ([]byte, error) {
+	if len(this.config.Protocols) < 1 {
+		return nil, errors.New("No Protocols configured")
+	}
+	protocol := this.config.Protocols[0]
+
+	ctx := NewContext(nil)
+	ctx.Fields = input
+	return protocol.Encode(ctx)
+}
+
+func (this *Codec) Scan(fn ScanResultHandler) error {
 	scanner := bufio.NewScanner(this.stream)
 	scanner.Split(this.Splitter())
 
@@ -127,7 +138,7 @@ func (this *Scanner) Scan(fn ScanResultHandler) error {
 	return nil
 }
 
-func (this *Scanner) EmitResult(result *ScanResult, fn ScanResultHandler) {
+func (this *Codec) EmitResult(result *ScanResult, fn ScanResultHandler) {
 	this.history.Add(result)
 	// 因为是指针,所有后面的修改会影响history中的数据
 	err := fn(result)
@@ -137,7 +148,7 @@ func (this *Scanner) EmitResult(result *ScanResult, fn ScanResultHandler) {
 	result.End = time.Now()
 }
 
-func (scanner *Scanner) Splitter() bufio.SplitFunc {
+func (scanner *Codec) Splitter() bufio.SplitFunc {
 	type Matcher struct {
 		Def    *Protocol
 		Marker []byte

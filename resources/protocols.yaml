@@ -50,13 +50,6 @@ protocols:
       - name: "version_raw"
         size: 2
 
-      - name: "hw_ver"
-        type: "calc"
-        formula: "int(fields.version_raw) / 256"
-      - name: "sw_ver"
-        type: "calc"
-        formula: "int(fields.version_raw) % 256"
-
       - name: "command"
         size: 1
 
@@ -70,38 +63,32 @@ protocols:
         crc_end: "vars.packet_len"
         size: 2
 
-      - type: "if"
-        condition: "fields.data_len > 0"
-        then:
-          - name: "response_code"
-            size: 1
+      - type: "switch"
+        field: "command"
+        cases:
+          - value: "C3"
+            fields:
+              - name: "data.channel"
+                type: "uint"
+                size: 1
+              - name: "data.id_len"
+                type: "uint"
+                size: 1
+              - name: "data.card_no"
+                type: "string"
+                size_expr: "fields.data.id_len"
+              - name: "data.user_role"
+                type: "uint"
+                size: 1
+              - name: "data.room"
+                size: 3
+              - name: "data.start_time"
+                size: 4
+              - name: "data.end_time"
+                size: 4
 
-          # 核心：混合模式 switch 结构
-          - type: "switch"
-            field: "command"
-            cases:
-              - value: "C3"
-                fields:
-                  - name: "id_len"
-                    type: "uint"
-                    size: 1
-                  - name: "card_no"
-                    type: "string"
-                    size_expr: "fields.id_len"
-                  - name: "user_role"
-                    type: "uint"
-                    size: 1
-                  - name: "room"
-                    size: 3
-                  - name: "start_time"
-                    size: 4
-                  - name: "end_time"
-                    size: 4
-
-
-
-            # 默认处理 (外部引用)
-            default_ref: "Unknown_Payload"
+        # 默认处理 (外部引用)
+        default_ref: "Unknown_Payload"
 
   # --- 3. DTU 心跳协议 ---
   - name: "DTUHeartbeat"

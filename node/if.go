@@ -5,11 +5,13 @@ import (
 	"github.com/vuuvv/vpacket/core"
 )
 
-const If = "if"
-
 type IfNode struct {
 	Condition *core.CelEvaluator
 	Then      []core.Node
+}
+
+func (this *IfNode) GetName() string {
+	return "if"
 }
 
 func (n *IfNode) Decode(ctx *core.Context) error {
@@ -27,10 +29,19 @@ func (n *IfNode) Decode(ctx *core.Context) error {
 	return nil
 }
 
-func (n *IfNode) Encode(input map[string]any, writer *core.BitWriter) error {
-
-	//TODO implement me
-	panic("implement me")
+func (n *IfNode) Encode(ctx *core.Context) error {
+	res, err := n.Condition.Execute(ctx)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	if b, ok := res.(bool); ok && b {
+		for _, node := range n.Then {
+			if err := node.Encode(ctx); err != nil {
+				return errors.WithStack(err)
+			}
+		}
+	}
+	return nil
 }
 
 func (n *IfNode) Compile(yf *core.YamlField, structures core.DataStructures) error {
@@ -48,5 +59,5 @@ func (n *IfNode) Compile(yf *core.YamlField, structures core.DataStructures) err
 }
 
 func registerIf() {
-	core.RegisterNodeCompilerFactory[IfNode](If, false)
+	core.RegisterNodeCompilerFactory[IfNode](core.NodeTypeIf, false)
 }

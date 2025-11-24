@@ -6,16 +6,18 @@ import (
 	"github.com/vuuvv/vpacket/core"
 )
 
-const Switch = "switch"
-
 type SwitchNode struct {
 	FieldName   string
 	Cases       map[any][]core.Node
 	DefaultCase []core.Node
 }
 
+func (this *SwitchNode) GetName() string {
+	return "switch"
+}
+
 func (n *SwitchNode) Decode(ctx *core.Context) error {
-	switchValue, ok := ctx.Fields[n.FieldName]
+	switchValue, ok := ctx.GetField(n.FieldName)
 	if !ok {
 		return fmt.Errorf("switch field '%s' not found in context", n.FieldName)
 	}
@@ -46,9 +48,36 @@ func (n *SwitchNode) Decode(ctx *core.Context) error {
 	return nil
 }
 
-func (n *SwitchNode) Encode(input map[string]any, writer *core.BitWriter) error {
-	//TODO implement me
-	panic("implement me")
+func (n *SwitchNode) Encode(ctx *core.Context) error {
+	switchValue, ok := ctx.GetField(n.FieldName)
+	if !ok {
+		return errors.Errorf("switch field '%s' not found in context", n.FieldName)
+	}
+
+	var nodesToExecute []core.Node
+	var caseKey any
+
+	// Handle uint64 case keys for command parsing
+	if uval, isUint := switchValue.(uint64); isUint {
+		caseKey = uval
+	} else {
+		caseKey = switchValue
+	}
+
+	if nodes, found := n.Cases[caseKey]; found {
+		nodesToExecute = nodes
+	} else if n.DefaultCase != nil {
+		nodesToExecute = n.DefaultCase
+	} else {
+		return errors.Errorf("command value %v not supported for payload parsing, no default case defined", switchValue)
+	}
+
+	for _, node := range nodesToExecute {
+		if err := node.Encode(ctx); err != nil {
+			return errors.Wrapf(err, "Encode field %s: %s", node.GetName(), err.Error())
+		}
+	}
+	return nil
 }
 
 func (n *SwitchNode) Compile(yf *core.YamlField, structures core.DataStructures) error {
@@ -109,5 +138,5 @@ func (n *SwitchNode) Compile(yf *core.YamlField, structures core.DataStructures)
 }
 
 func registerSwitch() {
-	core.RegisterNodeCompilerFactory[SwitchNode](Switch, false)
+	core.RegisterNodeCompilerFactory[SwitchNode](core.NodeTypeSwitch, false)
 }

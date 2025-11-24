@@ -5,11 +5,13 @@ import (
 	"github.com/vuuvv/vpacket/core"
 )
 
-const Calc = "calc"
-
 type CalcNode struct {
 	Name    string
 	Formula *core.CelEvaluator
+}
+
+func (this *CalcNode) GetName() string {
+	return this.Name
 }
 
 func (n *CalcNode) Decode(ctx *core.Context) error {
@@ -17,13 +19,12 @@ func (n *CalcNode) Decode(ctx *core.Context) error {
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	ctx.Fields[n.Name] = res
+	ctx.SetField(n.Name, res)
 	return nil
 }
 
-func (n *CalcNode) Encode(input map[string]any, writer *core.BitWriter) error {
-	//TODO implement me
-	panic("implement me")
+func (n *CalcNode) Encode(ctx *core.Context) error {
+	return nil
 }
 
 func (n *CalcNode) Compile(yf *core.YamlField, structures core.DataStructures) error {
@@ -37,5 +38,5 @@ func (n *CalcNode) Compile(yf *core.YamlField, structures core.DataStructures) e
 }
 
 func registerCalc() {
-	core.RegisterNodeCompilerFactory[CalcNode](Calc, false)
+	core.RegisterNodeCompilerFactory[CalcNode](core.NodeTypeCalc, false)
 }

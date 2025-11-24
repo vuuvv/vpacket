@@ -14,10 +14,10 @@ type FramingRule = core.FramingRule
 
 var NewContext = core.NewContext
 
-type Scanner = core.Scanner
+type Scanner = core.Codec
 type ScanResult = core.ScanResult
 
-var NewScanner = core.NewScanner
+var NewScanner = core.NewCodec
 var NewScannerFromBytes = core.NewScannerFromBytes
 var NewScannerFromFile = core.NewScannerFromFile
 
