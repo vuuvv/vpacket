@@ -2,6 +2,7 @@ package core
 
 import (
 	"github.com/vuuvv/errors"
+	"github.com/vuuvv/vpacket/utils"
 )
 
 const (
@@ -33,7 +34,7 @@ type NodeCompileFunc func(fields *YamlField, structures DataStructures) (Node, e
 func RegisterNodeCompilerFactory[T any](name string, isDefault bool) {
 	fn := func(fields *YamlField, structures DataStructures) (Node, error) {
 		var v T
-		node, ok := CastTo[Node](&v)
+		node, ok := utils.CastTo[Node](&v)
 		if !ok {
 			return nil, errors.Errorf("Node type [%s] not match: %T", name, node)
 		}

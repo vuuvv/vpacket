@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"github.com/vuuvv/errors"
+	"github.com/vuuvv/vpacket/utils"
 	"gopkg.in/yaml.v3"
 	"io"
 	"os"
@@ -24,18 +25,18 @@ type ScanResult struct {
 type ScanResultHandler func(result *ScanResult) error
 
 type Codec struct {
-	config  *Config
+	config  *Scheme
 	stream  io.Reader
-	history *LockFreeCircularBuffer
+	history *utils.LockFreeCircularBuffer
 }
 
 func NewCodec() *Codec {
 	scanner := &Codec{}
-	scanner.history = NewLockFreeCircularBuffer(10)
+	scanner.history = utils.NewLockFreeCircularBuffer(10)
 	return scanner
 }
 
-func NewScannerFromBytes(configBytes []byte) (*Codec, error) {
+func NewCodecFromBytes(configBytes []byte) (*Codec, error) {
 	scanner := NewCodec()
 	err := yaml.Unmarshal(configBytes, &scanner.config)
 	if err != nil {
@@ -45,7 +46,7 @@ func NewScannerFromBytes(configBytes []byte) (*Codec, error) {
 	return scanner, err
 }
 
-func NewScannerFromFile(configFile string) (*Codec, error) {
+func NewCodecFromFile(configFile string) (*Codec, error) {
 	scanner := NewCodec()
 	f, err := os.Open(configFile)
 	if err != nil {
@@ -54,7 +55,7 @@ func NewScannerFromFile(configFile string) (*Codec, error) {
 	defer func() {
 		_ = f.Close()
 	}()
-	scanner.config = &Config{}
+	scanner.config = &Scheme{}
 	err = yaml.NewDecoder(f).Decode(scanner.config)
 	if err != nil {
 		return nil, err
@@ -63,7 +64,7 @@ func NewScannerFromFile(configFile string) (*Codec, error) {
 	return scanner, err
 }
 
-func (scanner *Codec) Config(config *Config) *Codec {
+func (scanner *Codec) Config(config *Scheme) *Codec {
 	scanner.config = config
 	return scanner
 }
@@ -74,15 +75,15 @@ func (scanner *Codec) Stream(stream io.Reader) *Codec {
 }
 
 func (scanner *Codec) AddHistory(history any) *Codec {
-	scanner.history.Add(&WithTime{Time: time.Now(), Data: history})
+	scanner.history.Add(&utils.WithTime{Time: time.Now(), Data: history})
 	return scanner
 }
 
-func (scanner *Codec) Histories() []*WithTime {
+func (scanner *Codec) Histories() []*utils.WithTime {
 	histories := scanner.history.GetAll()
-	var res []*WithTime
+	var res []*utils.WithTime
 	for _, h := range histories {
-		if t, ok := h.(*WithTime); ok {
+		if t, ok := h.(*utils.WithTime); ok {
 			res = append(res, t)
 		}
 	}
@@ -132,6 +133,7 @@ func (this *Codec) Scan(fn ScanResultHandler) error {
 		this.EmitResult(result, fn)
 	}
 
+	// 如果scanner.err是EOF错误,scanner.Err()返回的错误是空,代表不是错误,是正常结束
 	if err := scanner.Err(); err != nil {
 		return errors.WithStack(err)
 	}

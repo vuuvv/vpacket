@@ -37,7 +37,7 @@ func (n *SwitchNode) Decode(ctx *core.Context) error {
 	} else if n.DefaultCase != nil {
 		nodesToExecute = n.DefaultCase
 	} else {
-		return fmt.Errorf("command value %v not supported for payload parsing, no default case defined", switchValue)
+		return errors.Errorf("command value %v not supported for payload parsing, no default case defined", switchValue)
 	}
 
 	for _, node := range nodesToExecute {

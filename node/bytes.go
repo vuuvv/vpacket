@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/vuuvv/errors"
 	"github.com/vuuvv/vpacket/core"
+	"github.com/vuuvv/vpacket/utils"
 	"math"
 )
 
@@ -15,6 +16,8 @@ type BytesNode struct {
 	Type        string
 	Size        int
 	SizeExpr    *core.CelEvaluator
+	Default     any
+	HasDefault  bool
 	Bits        int
 	Check       *core.CelEvaluator
 	Endian      string
@@ -144,15 +147,15 @@ func (this *BytesNode) readBytes(ctx *core.Context) (any, error) {
 	byteOrder := this.GetByteOrder()
 
 	switch this.Type {
-	case "", core.NodeTypeHex:
+	case core.NodeTypeHex:
 		return fmt.Sprintf("%02X", bytesVal), nil
 	case core.NodeTypeString:
 		return string(bytesVal), nil
 	case core.NodeTypeInt:
-		v, err := core.ConvertBytesToInt(bytesVal, byteOrder)
+		v, err := utils.ConvertBytesToInt(bytesVal, byteOrder)
 		return int64(v), errors.WithStack(err)
 	case core.NodeTypeUint:
-		v, err := core.ConvertBytesToInt(bytesVal, byteOrder)
+		v, err := utils.ConvertBytesToInt(bytesVal, byteOrder)
 		return v, errors.WithStack(err)
 	case core.NodeTypeFloat:
 		bytesLen := len(bytesVal)
@@ -184,7 +187,7 @@ func (this *BytesNode) crc(ctx *core.Context) (uint64, error) {
 		if err != nil {
 			return 0, errors.Wrapf(err, "CRC start expression execute failed")
 		}
-		if v, ok := core.ToUint64(res); ok {
+		if v, ok := utils.ToUint64(res); ok {
 			startOffset = int(v)
 		} else {
 			return 0, errors.Errorf("CRC start expression did not return an integer, %v", res)
@@ -200,7 +203,7 @@ func (this *BytesNode) crc(ctx *core.Context) (uint64, error) {
 		if err != nil {
 			return 0, errors.Wrapf(err, "CRC end expression execute failed: %s", err.Error())
 		}
-		if v, ok := core.ToUint64(res); ok {
+		if v, ok := utils.ToUint64(res); ok {
 			endOffset = int(v)
 		} else {
 			return 0, errors.Errorf("CRC end expression did not return an integer, %v", res)
@@ -231,26 +234,31 @@ func (this *BytesNode) Encode(ctx *core.Context) error {
 		this.Type = "uint"
 	}
 
+	val, ok := ctx.GetField(this.Name)
+	if !ok {
+		if !this.HasDefault {
+			return ctx.WritePlaceholder(size)
+		} else {
+			val = this.Default
+		}
+	}
+
 	switch this.Type {
 	case "", core.NodeTypeHex:
-		return this.WriteHex(ctx, size)
+		return this.WriteHex(ctx, val, size)
 	case core.NodeTypeString:
-		return this.WriteString(ctx, size)
+		return this.WriteString(ctx, val, size)
 	case core.NodeTypeInt:
-		return this.WriteUint(ctx, size)
+		return this.WriteUint(ctx, val, size)
 	case core.NodeTypeUint:
-		return this.WriteUint(ctx, size)
+		return this.WriteUint(ctx, val, size)
 	case core.NodeTypeFloat:
-		return this.WriteFloat(ctx, size)
+		return this.WriteFloat(ctx, val, size)
 	}
 	return nil
 }
 
-func (this *BytesNode) WriteHex(ctx *core.Context, size int) error {
-	val, ok := ctx.GetField(this.Name)
-	if !ok {
-		return ctx.WritePlaceholder(this.Size)
-	}
+func (this *BytesNode) WriteHex(ctx *core.Context, val any, size int) error {
 	str, ok := val.(string)
 	if !ok {
 		return errors.Errorf("value of '%s' should be a string, '%v'", this.Name, val)
@@ -261,39 +269,27 @@ func (this *BytesNode) WriteHex(ctx *core.Context, size int) error {
 		return errors.Errorf("value of '%s' should be a valid hex string, '%s'", this.Name, str)
 	}
 
-	return ctx.WriteBytes(core.ResizeBytes(bs, size, this.PadByte, this.PadPosition))
+	return ctx.WriteBytes(utils.ResizeBytes(bs, size, this.PadByte, this.PadPosition))
 }
 
-func (this *BytesNode) WriteString(ctx *core.Context, size int) error {
-	val, ok := ctx.GetField(this.Name)
-	if !ok {
-		return ctx.WritePlaceholder(this.Size)
-	}
+func (this *BytesNode) WriteString(ctx *core.Context, val any, size int) error {
 	str, ok := val.(string)
 	if !ok {
 		return errors.Errorf("value of '%s' should be a string, '%v'", this.Name, val)
 	}
-	return ctx.WriteBytes(core.ResizeBytes([]byte(str), size, this.PadByte, this.PadPosition))
+	return ctx.WriteBytes(utils.ResizeBytes([]byte(str), size, this.PadByte, this.PadPosition))
 }
 
-func (this *BytesNode) WriteUint(ctx *core.Context, size int) error {
-	val, ok := ctx.GetField(this.Name)
-	if !ok {
-		return ctx.WritePlaceholder(this.Size)
-	}
-	i, ok := core.ToUint64(val)
+func (this *BytesNode) WriteUint(ctx *core.Context, val any, size int) error {
+	i, ok := utils.ToUint64(val)
 	if !ok {
 		return errors.Errorf("value of '%s' should be a int, '%v'", this.Name, val)
 	}
 	return ctx.WriteInt(i, size, this.GetByteOrder())
 }
 
-func (this *BytesNode) WriteFloat(ctx *core.Context, size int) error {
-	val, ok := ctx.GetField(this.Name)
-	if !ok {
-		return ctx.WritePlaceholder(this.Size)
-	}
-	f, ok := core.ToFloat64(val)
+func (this *BytesNode) WriteFloat(ctx *core.Context, val any, size int) error {
+	f, ok := utils.ToFloat64(val)
 	if !ok {
 		return errors.Errorf("value of '%s' should be a float, '%v'", this.Name, val)
 	}
@@ -307,6 +303,10 @@ func (this *BytesNode) Compile(yf *core.YamlField, structures core.DataStructure
 	this.Type = yf.Type
 	this.Endian = yf.Endian
 	this.Crc = yf.Crc
+	this.HasDefault = !yf.Default.IsZero()
+	if this.Type == "" {
+		this.Type = core.NodeTypeHex
+	}
 
 	if yf.SizeExpr != "" {
 		expr, err := core.CompileExpression(yf.SizeExpr)
@@ -338,6 +338,33 @@ func (this *BytesNode) Compile(yf *core.YamlField, structures core.DataStructure
 				return errors.Wrapf(err, "Compile crc_end of field %s: %s", this.Name, err.Error())
 			}
 			this.CrcEnd = expr
+		}
+	}
+
+	if this.HasDefault {
+		switch this.Type {
+		case core.NodeTypeHex:
+			fallthrough
+		case core.NodeTypeString:
+			defaultVal, err := utils.YamlDecode[string](&yf.Default)
+			if err != nil {
+				return errors.Wrapf(err, "Compile 'default' of field %s failed: %s", this.Name, err.Error())
+			}
+			this.Default = *defaultVal
+		case core.NodeTypeInt:
+			fallthrough
+		case core.NodeTypeUint:
+			defaultVal, err := utils.YamlDecode[uint64](&yf.Default)
+			if err != nil {
+				return errors.Wrapf(err, "Compile 'default' of field %s failed: %s", this.Name, err.Error())
+			}
+			this.Default = *defaultVal
+		case core.NodeTypeFloat:
+			defaultVal, err := utils.YamlDecode[float64](&yf.Default)
+			if err != nil {
+				return errors.Wrapf(err, "Compile 'default' of field %s failed: %s", this.Name, err.Error())
+			}
+			this.Default = *defaultVal
 		}
 	}
 

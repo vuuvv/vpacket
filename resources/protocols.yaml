@@ -36,18 +36,22 @@ protocols:
     fields:
       - name: "magic"
         size: 2
+        default: '7273'
         check: "fields.magic == '7273'"
 
       - name: "direction"
+        default: 'BB'
         size: 1
 
       - name: "board_id"
         size: 12
 
       - name: "product_code"
+        default: '0000'
         size: 2
 
       - name: "version_raw"
+        default: '0000'
         size: 2
 
       - name: "command"
@@ -66,6 +70,14 @@ protocols:
       - type: "switch"
         field: "command"
         cases:
+          - value: "02"
+            fields:
+              - name: "data.port"
+                type: "uint"
+                size: 1
+              - name: "data.value"
+                type: "uint"
+                size: 1
           - value: "C3"
             fields:
               - name: "data.channel"
@@ -78,14 +90,17 @@ protocols:
                 type: "string"
                 size_expr: "fields.data.id_len"
               - name: "data.user_role"
-                type: "uint"
                 size: 1
+                default: '00'
               - name: "data.room"
                 size: 3
+                default: '000000'
               - name: "data.start_time"
                 size: 4
+                default: '00000000'
               - name: "data.end_time"
                 size: 4
+                default: '00000000'
 
         # 默认处理 (外部引用)
         default_ref: "Unknown_Payload"

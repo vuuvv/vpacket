@@ -33,7 +33,7 @@ func TestDsl(t *testing.T) {
 	fmt.Printf(">>> 模拟混合流总长度: %d bytes\n", mockStream.Len())
 
 	// 预处理和编译 DSL
-	scanner, err := NewScannerFromBytes(yamlBytes)
+	scanner, err := NewCodecFromBytes(yamlBytes)
 	if err != nil {
 		log.Fatal("Error creating scanner:", err)
 	}
@@ -59,17 +59,9 @@ func TestDsl(t *testing.T) {
   "data": {
     "card_no": "05242",
     "channel": 1,
-    "end_time": "00000000",
-    "id_len": 5,
-    "room": "000000",
-    "start_time": "00000000",
-    "user_role": 0
+    "id_len": 5
   },
-  "data_crc": 3595,
-  "direction": "BB",
-  "magic": "7273",
-  "product_code": "0000",
-  "version_raw": "0000"
+  "data_crc": 3595
 }
 `
 	fields := map[string]any{}
@@ -112,8 +104,8 @@ func TestDsl(t *testing.T) {
 	//// 3. 构造混合数据流，测试 Command Switch 逻辑
 	//// Command 0x01 (外部引用) 和 Command 0x02 (内联定义)
 	//
-	//// 4. 创建模块化分发器 (Scanner)
-	//scanner := bufio.NewScanner(mockStream)
+	//// 4. 创建模块化分发器 (Codec)
+	//scanner := bufio.NewCodec(mockStream)
 	//scanner.Split(Splitter(allProtocols))
 	//
 	//// 5. 循环读取完整包并分发
@@ -147,7 +139,7 @@ func TestDsl(t *testing.T) {
 	//}
 	//
 	//if err := scanner.Err(); err != nil {
-	//	log.Printf("Scanner Error: %v", err)
+	//	log.Printf("Codec Error: %v", err)
 	//}
 }
 

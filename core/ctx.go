@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/vuuvv/errors"
+	"github.com/vuuvv/vpacket/utils"
 	"strings"
 )
 
@@ -135,7 +136,7 @@ func (c *Context) ReadBits(n int) (uint64, error) {
 	remainingBits := (n + c.BitPos) % 8
 
 	// 检查是否有足够的数据
-	if c.BytePos+fullBytes+BoolToInt(remainingBits > 0) > len(c.Data) {
+	if c.BytePos+fullBytes+utils.BoolToInt(remainingBits > 0) > len(c.Data) {
 		return 0, errors.New("unexpected EOF inside bits")
 	}
 
@@ -150,7 +151,7 @@ func (c *Context) ReadBits(n int) (uint64, error) {
 	if remainingBits > 0 {
 		value = (value << remainingBits) | uint64(c.Data[c.BytePos]>>(8-remainingBits))
 		c.BitPos = remainingBits
-		c.BytePos += BoolToInt(c.BitPos == 8)
+		c.BytePos += utils.BoolToInt(c.BitPos == 8)
 		c.BitPos %= 8
 	} else {
 		c.BitPos = 0

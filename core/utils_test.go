@@ -37,12 +37,3 @@ func TestByteOrder(t *testing.T) {
 	_ = binary.Write(&buf2, binary.LittleEndian, uint64(3539))
 	fmt.Printf("%X\n", buf2.Bytes())
 }
-
-func TestWriteBits(t *testing.T) {
-	writer := NewBitWriter()
-	_ = writer.WriteBits(3539, 16, binary.BigEndian)
-	fmt.Printf("%X\n", writer.Buffer.Bytes())
-	writer = NewBitWriter()
-	_ = writer.WriteBits(3539, 16, binary.LittleEndian)
-	fmt.Printf("%X\n", writer.Buffer.Bytes())
-}

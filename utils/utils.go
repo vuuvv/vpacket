@@ -1,9 +1,11 @@
-package core
+package utils
 
 import (
 	"encoding/binary"
 	"fmt"
 	"github.com/spf13/cast"
+	"github.com/vuuvv/errors"
+	"gopkg.in/yaml.v3"
 	"reflect"
 	"strconv"
 	"sync/atomic"
@@ -159,6 +161,12 @@ func ConvertBytesToIntLE(data []byte) (uint64, error) {
 		result |= uint64(data[i]) << (i * 8)
 	}
 	return result, nil
+}
+
+func YamlDecode[T any](node *yaml.Node) (*T, error) {
+	var result T
+	err := node.Decode(&result)
+	return &result, errors.WithStack(err)
 }
 
 const (

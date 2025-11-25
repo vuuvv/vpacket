@@ -2,6 +2,7 @@ package core
 
 import (
 	"github.com/vuuvv/errors"
+	"github.com/vuuvv/vpacket/utils"
 	"gopkg.in/yaml.v3"
 )
 
@@ -29,7 +30,7 @@ func RegisterFramingRuleDecoderFactory[T any](name string) {
 		if err != nil {
 			return nil, errors.WithStack(err)
 		}
-		if ret, ok := CastTo[FramingRule](&rule); ok {
+		if ret, ok := utils.CastTo[FramingRule](&rule); ok {
 			return ret, ret.Setup()
 		}
 		return nil, errors.Errorf("Framing rule type [%s] not match: %T", name, rule)
