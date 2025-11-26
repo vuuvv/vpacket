@@ -36,6 +36,7 @@ type Server struct {
 	cancel           context.CancelFunc
 	protocol         *core.Scheme
 	connectionCounts int32
+	messageHandle    func(result *core.ScanResult)
 }
 
 func NewTCPServer(config *ServerConfig, protocol *core.Scheme) *Server {

@@ -114,5 +114,9 @@ protocols:
       end_delimiter: "s']'"
       max_len: 128
     fields:
-      - name: "dtuSn"
+      - name: "deviceId"
+        type: "string"
         size: -1
+      - name: "command"
+        type: "calc"
+        formula: "'heartbeat'"

@@ -4,6 +4,7 @@ import (
 	"github.com/vuuvv/errors"
 	"github.com/vuuvv/vpacket/utils"
 	"gopkg.in/yaml.v3"
+	"time"
 )
 
 type FramingRuleMatchResult struct {
@@ -12,12 +13,14 @@ type FramingRuleMatchResult struct {
 	Advance   int
 	Token     []byte
 	Error     error
+	Time      time.Time
 }
 
 func NewFramingRuleMatchResult(advance int, token []byte) *FramingRuleMatchResult {
 	return &FramingRuleMatchResult{
 		Advance: advance,
 		Token:   token,
+		Time:    time.Now(),
 	}
 }
 
@@ -27,15 +30,21 @@ func AbandonFramingRuleMatchResult(size int, data []byte) *FramingRuleMatchResul
 		Abandoned: true,
 		Advance:   size,
 		Token:     []byte{data[0]},
+		Time:      time.Now(),
 	}
 }
 
 func WaitFramingRuleMatchResult() *FramingRuleMatchResult {
-	return &FramingRuleMatchResult{}
+	return &FramingRuleMatchResult{
+		Time: time.Now(),
+	}
 }
 
 func ErrorFramingRuleMatchResult(err error) *FramingRuleMatchResult {
-	return &FramingRuleMatchResult{Error: err}
+	return &FramingRuleMatchResult{
+		Error: err,
+		Time:  time.Now(),
+	}
 }
 
 type FramingRule interface {

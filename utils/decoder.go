@@ -23,7 +23,6 @@ func Uint64ToBytes[T constraints.Integer](u T, size int, order binary.ByteOrder)
 
 // ParseTValue 核心解析函数：将输入字符串解析为 []byte
 func ParseTValue(inputString string, size int, byteOrder binary.ByteOrder) ([]byte, error) {
-
 	// 1. 预处理：判断是否符合 T'xxx' 格式
 	var typeID string
 	var dataStr string

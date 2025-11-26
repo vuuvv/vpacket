@@ -16,11 +16,11 @@ type BytesNode struct {
 	Type        string
 	Size        int
 	SizeExpr    *core.CelEvaluator
-	Default     any
+	Default     []byte
 	HasDefault  bool
 	Bits        int
 	Check       *core.CelEvaluator
-	Endian      string
+	ByteOrder   binary.ByteOrder
 	Crc         string
 	CrcStart    *core.CelEvaluator
 	CrcEnd      *core.CelEvaluator
@@ -32,9 +32,9 @@ func (this *BytesNode) GetName() string {
 	return this.Name
 }
 
-func (this *BytesNode) GetByteOrder() (byteOrder binary.ByteOrder) {
+func (this *BytesNode) GetByteOrder(byteOrderKey string) (byteOrder binary.ByteOrder) {
 	byteOrder = binary.BigEndian
-	if this.Endian == "litter" {
+	if byteOrderKey == "litter" {
 		byteOrder = binary.LittleEndian
 	}
 	return byteOrder
@@ -116,9 +116,9 @@ func (this *BytesNode) getSize(ctx *core.Context) (int, error) {
 			return 0, errors.Errorf("size expr return invalid type: %T", val)
 		}
 	}
-	if size < 0 {
-		return 0, errors.Errorf("negative size: %d", size)
-	}
+	//if size < 0 {
+	//	return 0, errors.Errorf("negative size: %d", size)
+	//}
 	return size, nil
 }
 
@@ -144,7 +144,7 @@ func (this *BytesNode) readBytes(ctx *core.Context) (any, error) {
 		return nil, errors.WithStack(err)
 	}
 
-	byteOrder := this.GetByteOrder()
+	byteOrder := this.ByteOrder
 
 	switch this.Type {
 	case core.NodeTypeHex:
@@ -239,7 +239,7 @@ func (this *BytesNode) Encode(ctx *core.Context) error {
 		if !this.HasDefault {
 			return ctx.WritePlaceholder(size)
 		} else {
-			val = this.Default
+			return ctx.WriteBytes(this.Default)
 		}
 	}
 
@@ -285,7 +285,7 @@ func (this *BytesNode) WriteUint(ctx *core.Context, val any, size int) error {
 	if !ok {
 		return errors.Errorf("value of '%s' should be a int, '%v'", this.Name, val)
 	}
-	return ctx.WriteInt(i, size, this.GetByteOrder())
+	return ctx.WriteInt(i, size, this.ByteOrder)
 }
 
 func (this *BytesNode) WriteFloat(ctx *core.Context, val any, size int) error {
@@ -293,7 +293,7 @@ func (this *BytesNode) WriteFloat(ctx *core.Context, val any, size int) error {
 	if !ok {
 		return errors.Errorf("value of '%s' should be a float, '%v'", this.Name, val)
 	}
-	return ctx.WriteFloat(f, size, this.GetByteOrder())
+	return ctx.WriteFloat(f, size, this.ByteOrder)
 }
 
 func (this *BytesNode) Compile(yf *core.YamlField, structures core.DataStructures) error {
@@ -301,12 +301,14 @@ func (this *BytesNode) Compile(yf *core.YamlField, structures core.DataStructure
 	this.Size = yf.Size
 	this.Bits = yf.Bits
 	this.Type = yf.Type
-	this.Endian = yf.Endian
 	this.Crc = yf.Crc
 	this.HasDefault = !yf.Default.IsZero()
+
 	if this.Type == "" {
 		this.Type = core.NodeTypeHex
 	}
+
+	this.ByteOrder = this.GetByteOrder(yf.Endian)
 
 	if yf.SizeExpr != "" {
 		expr, err := core.CompileExpression(yf.SizeExpr)
@@ -342,29 +344,13 @@ func (this *BytesNode) Compile(yf *core.YamlField, structures core.DataStructure
 	}
 
 	if this.HasDefault {
-		switch this.Type {
-		case core.NodeTypeHex:
-			fallthrough
-		case core.NodeTypeString:
-			defaultVal, err := utils.YamlDecode[string](&yf.Default)
-			if err != nil {
-				return errors.Wrapf(err, "Compile 'default' of field %s failed: %s", this.Name, err.Error())
-			}
-			this.Default = *defaultVal
-		case core.NodeTypeInt:
-			fallthrough
-		case core.NodeTypeUint:
-			defaultVal, err := utils.YamlDecode[uint64](&yf.Default)
-			if err != nil {
-				return errors.Wrapf(err, "Compile 'default' of field %s failed: %s", this.Name, err.Error())
-			}
-			this.Default = *defaultVal
-		case core.NodeTypeFloat:
-			defaultVal, err := utils.YamlDecode[float64](&yf.Default)
-			if err != nil {
-				return errors.Wrapf(err, "Compile 'default' of field %s failed: %s", this.Name, err.Error())
-			}
-			this.Default = *defaultVal
+		defaultVal, err := utils.YamlDecode[string](&yf.Default)
+		if err != nil {
+			return err
+		}
+		this.Default, err = utils.ParseTValue(*defaultVal, this.Size, this.ByteOrder)
+		if err != nil {
+			return errors.Wrapf(err, "Compile 'default' of field %s: %s", this.Name, err.Error())
 		}
 	}
 

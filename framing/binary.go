@@ -2,9 +2,9 @@ package framing
 
 import (
 	"encoding/binary"
-	"encoding/hex"
 	"github.com/vuuvv/errors"
 	"github.com/vuuvv/vpacket/core"
+	"github.com/vuuvv/vpacket/utils"
 )
 
 const Binary = "binary"
@@ -28,7 +28,7 @@ func (this *BinaryRule) Setup() (err error) {
 	if this.HeaderMarker == "" {
 		return errors.New("BinaryRule.Setup: no header marker")
 	}
-	this.headerMarkerBytes, err = hex.DecodeString(this.HeaderMarker)
+	this.headerMarkerBytes, err = utils.ParseTValue(this.HeaderMarker, -1, nil)
 	if err != nil {
 		return errors.Wrapf(err, "BinaryRule.Setup: invalid header marker: %s, should be valid hex format. eg: 7a7b", this.HeaderMarker)
 	}

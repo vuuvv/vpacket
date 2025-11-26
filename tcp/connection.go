@@ -20,7 +20,7 @@ type DeviceConnection struct {
 	mu             sync.Mutex
 	ctx            context.Context
 	cancel         context.CancelFunc
-	deviceId       string   // 实际的连接设备，可能是dtu,网关等
+	deviceId       string   // 实际的连接设备，可能是设备,dtu,网关等
 	subDevices     []string // 子设备的key(一般是序列号),子设备可以查询服务器获取,或者子设备自己发送心跳(哪种形式应该由服务器进行配置)
 }
 
@@ -81,6 +81,9 @@ func (this *DeviceConnection) Scan(protocol *core.Scheme) error {
 
 func (this *DeviceConnection) Handle(result *core.ScanResult) error {
 	fmt.Printf("%02x\n", result.Packet)
+	if this.server.messageHandle != nil {
+		this.server.messageHandle(result)
+	}
 	this.UpdateActiveTime()
 	return nil
 }

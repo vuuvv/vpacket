@@ -11,14 +11,15 @@ import (
 )
 
 type ScanResult struct {
-	Abaddon     bool      `json:"abaddon,omitempty"`
-	Packet      []byte    `json:"packet,omitempty"`
-	Protocol    *Protocol `json:"protocol,omitempty"`
-	Data        any       `json:"data,omitempty"`
-	ScanError   error     `json:"scanError,omitempty"`
-	HandleError error     `json:"handleError,omitempty"`
-	Start       time.Time `json:"start,omitempty"`
-	End         time.Time `json:"end,omitempty"`
+	DeviceId    string     `json:"deviceId"`           // 直接连接的设备序列号
+	Abaddon     bool       `json:"abaddon,omitempty"`  // 是否为丢弃的包
+	Packet      []byte     `json:"packet,omitempty"`   // 为解析的原始包
+	Protocol    *Protocol  `json:"protocol,omitempty"` // 使用的协议
+	Data        any        `json:"data,omitempty"`     // 解析出来的数据
+	ScanError   error      `json:"scanError,omitempty"`
+	HandleError error      `json:"handleError,omitempty"`
+	Start       *time.Time `json:"start,omitempty"`
+	End         *time.Time `json:"end,omitempty"`
 }
 
 type ScanResultHandler func(result *ScanResult) error
@@ -119,6 +120,7 @@ func (this *Codec) Scan(fn ScanResultHandler) error {
 			Packet:    framingRuleResult.Token,
 			Protocol:  framingRuleResult.Protocol,
 			ScanError: framingRuleResult.Error,
+			Start:     &framingRuleResult.Time,
 		}
 
 		// 分包有错误
@@ -159,7 +161,10 @@ func (this *Codec) EmitResult(result *ScanResult, fn ScanResultHandler) {
 	if err != nil {
 		result.HandleError = err
 	}
-	result.End = time.Now()
+	if result.End != nil {
+		now := time.Now()
+		result.End = &now
+	}
 }
 
 func (this *Codec) Splitter(scanner *utils.Scanner) utils.SplitFunc {
