@@ -1,7 +1,6 @@
 package node
 
 import (
-	"fmt"
 	"github.com/vuuvv/errors"
 	"github.com/vuuvv/vpacket/core"
 )
@@ -17,41 +16,27 @@ func (this *SwitchNode) GetName() string {
 }
 
 func (n *SwitchNode) Decode(ctx *core.Context) error {
-	switchValue, ok := ctx.GetField(n.FieldName)
-	if !ok {
-		return fmt.Errorf("switch field '%s' not found in context", n.FieldName)
+	nodes, err := n.getNodesToExecute(ctx)
+	if err != nil {
+		return errors.WithStack(err)
 	}
 
-	var nodesToExecute []core.Node
-	var caseKey any
-
-	// Handle uint64 case keys for command parsing
-	if uval, isUint := switchValue.(uint64); isUint {
-		caseKey = uval
-	} else {
-		caseKey = switchValue
-	}
-
-	if nodes, found := n.Cases[caseKey]; found {
-		nodesToExecute = nodes
-	} else if n.DefaultCase != nil {
-		nodesToExecute = n.DefaultCase
-	} else {
-		return errors.Errorf("command value %v not supported for payload parsing, no default case defined", switchValue)
-	}
-
-	for _, node := range nodesToExecute {
-		if err := node.Decode(ctx); err != nil {
-			return errors.WithStack(err)
-		}
-	}
-	return nil
+	return core.NodeDecode(ctx, nodes...)
 }
 
 func (n *SwitchNode) Encode(ctx *core.Context) error {
+	nodes, err := n.getNodesToExecute(ctx)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	// 执行节点编码
+	return core.NodeEncode(ctx, nodes...)
+}
+
+func (n *SwitchNode) getNodesToExecute(ctx *core.Context) ([]core.Node, error) {
 	switchValue, ok := ctx.GetField(n.FieldName)
 	if !ok {
-		return errors.Errorf("switch field '%s' not found in context", n.FieldName)
+		return nil, errors.Errorf("switch field '%s' not found in context", n.FieldName)
 	}
 
 	var nodesToExecute []core.Node
@@ -69,15 +54,10 @@ func (n *SwitchNode) Encode(ctx *core.Context) error {
 	} else if n.DefaultCase != nil {
 		nodesToExecute = n.DefaultCase
 	} else {
-		return errors.Errorf("command value %v not supported for payload parsing, no default case defined", switchValue)
+		return nil, errors.Errorf("command value %v not supported for payload parsing, no default case defined", switchValue)
 	}
 
-	for _, node := range nodesToExecute {
-		if err := node.Encode(ctx); err != nil {
-			return errors.Wrapf(err, "Encode field %s: %s", node.GetName(), err.Error())
-		}
-	}
-	return nil
+	return nodesToExecute, nil
 }
 
 func (n *SwitchNode) Compile(yf *core.YamlField, structures core.DataStructures) error {

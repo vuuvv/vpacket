@@ -110,10 +110,9 @@ protocols:
     type: "text"
 
     framing_rule:
-      header_marker: "5B"
-      start_delimiter: "["
-      end_delimiter: "]"
+      start_delimiter: "s'['"
+      end_delimiter: "s']'"
       max_len: 128
     fields:
-      - name: "content"
-        type: "raw_text"
+      - name: "dtuSn"
+        size: -1

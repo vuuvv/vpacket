@@ -20,10 +20,9 @@ func (n *IfNode) Decode(ctx *core.Context) error {
 		return errors.WithStack(err)
 	}
 	if b, ok := res.(bool); ok && b {
-		for _, node := range n.Then {
-			if err := node.Decode(ctx); err != nil {
-				return errors.WithStack(err)
-			}
+		err = core.NodeDecode(ctx, n.Then...)
+		if err != nil {
+			return errors.WithStack(err)
 		}
 	}
 	return nil
@@ -35,10 +34,9 @@ func (n *IfNode) Encode(ctx *core.Context) error {
 		return errors.WithStack(err)
 	}
 	if b, ok := res.(bool); ok && b {
-		for _, node := range n.Then {
-			if err := node.Encode(ctx); err != nil {
-				return errors.WithStack(err)
-			}
+		err = core.NodeEncode(ctx, n.Then...)
+		if err != nil {
+			return errors.WithStack(err)
 		}
 	}
 	return nil

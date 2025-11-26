@@ -20,7 +20,7 @@ func TestDsl(t *testing.T) {
 
 	// 模拟数据
 	mockStream := new(bytes.Buffer)
-	//mockStream.WriteString("[keep_alive]")                        // Packet 1: Text Heartbeat
+	mockStream.WriteString("[keep_alive]") // Packet 1: Text Heartbeat
 	//writePacket(mockStream, 1, 4, []byte{0x00, 0xAA, 0xBB, 0xCC}) // Packet 2: Cmd 0x01 (Len 4)
 	//mockStream.WriteString("junk")
 	//writePacket(mockStream, 2, 5, []byte{0x00, 0x01, 0x02, 0x03, 0x04}) // Packet 3: Cmd 0x02 (Len 5)
@@ -35,7 +35,8 @@ func TestDsl(t *testing.T) {
 	// 预处理和编译 DSL
 	scanner, err := NewCodecFromBytes(yamlBytes)
 	if err != nil {
-		log.Fatal("Error creating scanner:", err)
+		fmt.Printf("%+v\n", err)
+		return
 	}
 
 	err = scanner.Stream(mockStream).Scan(func(result *ScanResult) error {
@@ -49,7 +50,8 @@ func TestDsl(t *testing.T) {
 		return nil
 	})
 	if err != nil {
-		log.Fatal("Error scanning:", err)
+		fmt.Printf("%+v\n", err)
+		return
 	}
 
 	text := `

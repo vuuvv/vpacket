@@ -164,6 +164,9 @@ func (c *Context) ReadBytes(n int) ([]byte, error) {
 	if c.BitPos != 0 {
 		return nil, errors.New("read bytes must be aligned")
 	}
+	if n < 0 {
+		n = len(c.Data) - c.BytePos
+	}
 	if c.BytePos+n > len(c.Data) {
 		return nil, errors.Errorf("EOF reading bytes, need %d, have %d", n, len(c.Data)-c.BytePos)
 	}

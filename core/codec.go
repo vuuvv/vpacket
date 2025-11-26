@@ -1,7 +1,6 @@
 package core
 
 import (
-	"bufio"
 	"bytes"
 	"github.com/vuuvv/errors"
 	"github.com/vuuvv/vpacket/utils"
@@ -25,7 +24,7 @@ type ScanResult struct {
 type ScanResultHandler func(result *ScanResult) error
 
 type Codec struct {
-	config  *Scheme
+	scheme  *Scheme
 	stream  io.Reader
 	history *utils.LockFreeCircularBuffer
 }
@@ -38,11 +37,11 @@ func NewCodec() *Codec {
 
 func NewCodecFromBytes(configBytes []byte) (*Codec, error) {
 	scanner := NewCodec()
-	err := yaml.Unmarshal(configBytes, &scanner.config)
+	err := yaml.Unmarshal(configBytes, &scanner.scheme)
 	if err != nil {
 		return nil, err
 	}
-	err = scanner.config.Setup()
+	err = scanner.scheme.Setup()
 	return scanner, err
 }
 
@@ -55,32 +54,32 @@ func NewCodecFromFile(configFile string) (*Codec, error) {
 	defer func() {
 		_ = f.Close()
 	}()
-	scanner.config = &Scheme{}
-	err = yaml.NewDecoder(f).Decode(scanner.config)
+	scanner.scheme = &Scheme{}
+	err = yaml.NewDecoder(f).Decode(scanner.scheme)
 	if err != nil {
 		return nil, err
 	}
-	err = scanner.config.Setup()
+	err = scanner.scheme.Setup()
 	return scanner, err
 }
 
-func (scanner *Codec) Config(config *Scheme) *Codec {
-	scanner.config = config
-	return scanner
+func (this *Codec) Config(config *Scheme) *Codec {
+	this.scheme = config
+	return this
 }
 
-func (scanner *Codec) Stream(stream io.Reader) *Codec {
-	scanner.stream = stream
-	return scanner
+func (this *Codec) Stream(stream io.Reader) *Codec {
+	this.stream = stream
+	return this
 }
 
-func (scanner *Codec) AddHistory(history any) *Codec {
-	scanner.history.Add(&utils.WithTime{Time: time.Now(), Data: history})
-	return scanner
+func (this *Codec) AddHistory(history any) *Codec {
+	this.history.Add(&utils.WithTime{Time: time.Now(), Data: history})
+	return this
 }
 
-func (scanner *Codec) Histories() []*utils.WithTime {
-	histories := scanner.history.GetAll()
+func (this *Codec) Histories() []*utils.WithTime {
+	histories := this.history.GetAll()
 	var res []*utils.WithTime
 	for _, h := range histories {
 		if t, ok := h.(*utils.WithTime); ok {
@@ -91,10 +90,10 @@ func (scanner *Codec) Histories() []*utils.WithTime {
 }
 
 func (this *Codec) Encode(input map[string]any) ([]byte, error) {
-	if len(this.config.Protocols) < 1 {
+	if len(this.scheme.Protocols) < 1 {
 		return nil, errors.New("No Protocols configured")
 	}
-	protocol := this.config.Protocols[0]
+	protocol := this.scheme.Protocols[0]
 
 	ctx := NewContext(nil)
 	ctx.Fields = input
@@ -102,28 +101,38 @@ func (this *Codec) Encode(input map[string]any) ([]byte, error) {
 }
 
 func (this *Codec) Scan(fn ScanResultHandler) error {
-	scanner := bufio.NewScanner(this.stream)
-	scanner.Split(this.Splitter())
+	scanner := utils.NewScanner(this.stream)
+	scanner.Split(this.Splitter(scanner))
 
 	for scanner.Scan() {
-		packet := scanner.Bytes()
-		result := &ScanResult{Packet: packet, Start: time.Now()}
+		scannerResult := scanner.Result()
+		if scannerResult == nil {
+			continue
+		}
+		framingRuleResult, ok := scannerResult.(*FramingRuleMatchResult)
+		if !ok {
+			continue
+		}
 
-		if len(packet) == 1 {
-			result.Abaddon = true
+		result := &ScanResult{
+			Abaddon:   framingRuleResult.Abandoned,
+			Packet:    framingRuleResult.Token,
+			Protocol:  framingRuleResult.Protocol,
+			ScanError: framingRuleResult.Error,
+		}
+
+		// 分包有错误
+		if result.ScanError != nil {
 			this.EmitResult(result, fn)
 			continue
 		}
 
-		protocol := this.config.FindProtocol(packet)
-		if protocol == nil {
-			result.ScanError = errors.New("protocol not found")
+		if result.Abaddon {
 			this.EmitResult(result, fn)
 			continue
 		}
-		result.Protocol = protocol
 
-		data, err := protocol.Parse(packet)
+		data, err := result.Protocol.Decode(result.Packet)
 		result.Data = data
 		if err != nil {
 			result.ScanError = err
@@ -132,6 +141,9 @@ func (this *Codec) Scan(fn ScanResultHandler) error {
 		}
 		this.EmitResult(result, fn)
 	}
+
+	// 解码结束, 移除结果
+	scanner.SetResult(nil)
 
 	// 如果scanner.err是EOF错误,scanner.Err()返回的错误是空,代表不是错误,是正常结束
 	if err := scanner.Err(); err != nil {
@@ -150,14 +162,14 @@ func (this *Codec) EmitResult(result *ScanResult, fn ScanResultHandler) {
 	result.End = time.Now()
 }
 
-func (scanner *Codec) Splitter() bufio.SplitFunc {
+func (this *Codec) Splitter(scanner *utils.Scanner) utils.SplitFunc {
 	type Matcher struct {
 		Def    *Protocol
 		Marker []byte
 	}
 	var matchers []Matcher
 
-	for _, p := range scanner.config.Protocols {
+	for _, p := range this.scheme.Protocols {
 		marker := p.ParsedFramingRule.GetHeaderMarker()
 
 		if len(marker) > 0 {
@@ -176,12 +188,16 @@ func (scanner *Codec) Splitter() bufio.SplitFunc {
 				res = m.Def.ParsedFramingRule.Split(data)
 
 				if res != nil && (res.Advance > 0 || res.Error != nil) {
-					res.ProtocolName = m.Def.Name
+					res.Protocol = m.Def
+					scanner.SetResult(res)
 					return res.Advance, res.Token, res.Error
 				}
 			}
 		}
 
+		// 没有匹配到就丢弃第一个数据
+		res = AbandonFramingRuleMatchResult(1, data)
+		scanner.SetResult(res)
 		return 1, []byte{data[0]}, nil // 脏数据处理
 	}
 }

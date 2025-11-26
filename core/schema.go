@@ -46,12 +46,3 @@ func (this *Scheme) Setup() error {
 	}
 	return nil
 }
-
-func (this *Scheme) FindProtocol(token []byte) *Protocol {
-	for _, p := range this.Protocols {
-		if p.CanParse(token) {
-			return p
-		}
-	}
-	return nil
-}

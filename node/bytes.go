@@ -51,7 +51,7 @@ func (this *BytesNode) Decode(ctx *core.Context) (err error) {
 		if this.Bits%8 != 0 {
 			val, err = this.readBits(ctx)
 			if err != nil {
-				return errors.Wrapf(err, "Parse field %s: %s", this.Name, err.Error())
+				return err
 			}
 			ctx.SetField(this.Name, val)
 			return nil
@@ -61,36 +61,36 @@ func (this *BytesNode) Decode(ctx *core.Context) (err error) {
 		}
 	}
 	if this.Size == 0 && this.SizeExpr == nil {
-		return errors.Errorf("Parse field %s: should specify a size or bits or size_expr", this.Name)
+		return errors.New("should specify a size or bits or size_expr")
 	}
 	val, err = this.readBytes(ctx)
 	if err != nil {
-		return errors.Wrapf(err, "Parse field %s: %s", this.Name, err.Error())
+		return err
 	}
 	ctx.SetField(this.Name, val)
 
 	if this.Crc != "" {
 		crcVal, err := this.crc(ctx)
 		if err != nil {
-			return errors.Wrapf(err, "Parse field %s: %s", this.Name, err.Error())
+			return err
 		}
 
 		if crcVal != val {
-			return errors.Errorf("Parse field %s: CRC check failed, expect '%X', actual '%X'", this.Name, val, crcVal)
+			return errors.Errorf("CRC check failed, expect '%X', actual '%X'", val, crcVal)
 		}
 	}
 
 	if this.Check != nil {
 		res, err := this.Check.Execute(ctx)
 		if err != nil {
-			return errors.Wrapf(err, "Parse field %s: %s", this.Name, err.Error())
+			return err
 		}
 		b, ok := res.(bool)
 		if !ok {
-			return errors.Errorf("Parse field %s: check result is not a bool", this.Name)
+			return errors.New("check result is not a bool")
 		}
 		if !b {
-			return errors.Errorf("Parse field %s: check failed", this.Name)
+			return errors.New("check failed")
 		}
 	}
 	return nil

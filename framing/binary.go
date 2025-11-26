@@ -37,12 +37,12 @@ func (this *BinaryRule) Setup() (err error) {
 
 func (this *BinaryRule) Split(data []byte) *core.FramingRuleMatchResult {
 	if len(data) < this.MinHeaderSize {
-		return nil
+		return core.WaitFramingRuleMatchResult()
 	}
 
 	var bodyLen int
 	if len(data) < this.LengthOffset+this.LengthSize {
-		return nil
+		return core.WaitFramingRuleMatchResult()
 	}
 	lenBytes := data[this.LengthOffset : this.LengthOffset+this.LengthSize]
 	bodyLen = int(binary.BigEndian.Uint16(lenBytes))
@@ -53,7 +53,7 @@ func (this *BinaryRule) Split(data []byte) *core.FramingRuleMatchResult {
 		return nil
 	}
 
-	return &core.FramingRuleMatchResult{Advance: totalLen, Token: data[:totalLen]}
+	return core.NewFramingRuleMatchResult(totalLen, data[:totalLen])
 }
 
 func (this *BinaryRule) GetHeaderMarker() []byte {

@@ -64,9 +64,27 @@ func NodeCompile(fields []*YamlField, structures DataStructures) ([]Node, error)
 		}
 		node, err := fn(yf, structures)
 		if err != nil {
-			return nil, errors.WithStack(err)
+			return nil, errors.Wrapf(err, "Field '%s' compile failed", yf.Name)
 		}
 		nodes = append(nodes, node)
 	}
 	return nodes, nil
+}
+
+func NodeEncode(ctx *Context, nodes ...Node) error {
+	for _, node := range nodes {
+		if err := node.Encode(ctx); err != nil {
+			return errors.Wrapf(err, "Encode field %s failure: %s", node.GetName(), err.Error())
+		}
+	}
+	return nil
+}
+
+func NodeDecode(ctx *Context, nodes ...Node) error {
+	for _, node := range nodes {
+		if err := node.Decode(ctx); err != nil {
+			return errors.Wrapf(err, "Decode field %s failure: %s", node.GetName(), err.Error())
+		}
+	}
+	return nil
 }

@@ -1,7 +1,6 @@
 package core
 
 import (
-	"bytes"
 	"github.com/vuuvv/errors"
 	"gopkg.in/yaml.v3"
 )
@@ -35,29 +34,14 @@ func (p *Protocol) Setup(structures DataStructures) error {
 	return nil
 }
 
-func (p *Protocol) CanParse(token []byte) bool {
-	if p.ParsedFramingRule == nil {
-		return false
-	}
-	return bytes.HasPrefix(token, p.ParsedFramingRule.GetHeaderMarker())
-}
-
-func (p *Protocol) Parse(packet []byte) (any, error) {
+func (p *Protocol) Decode(packet []byte) (any, error) {
 	ctx := NewContext(packet)
 	ctx.Vars["packet_len"] = len(packet)
-	for _, node := range p.ParsedFields {
-		if err := node.Decode(ctx); err != nil {
-			return ctx.Fields, errors.WithStack(err)
-		}
-	}
-	return ctx.Fields, nil
+	err := NodeDecode(ctx, p.ParsedFields...)
+	return ctx.Fields, err
 }
 
 func (p *Protocol) Encode(ctx *Context) ([]byte, error) {
-	for _, node := range p.ParsedFields {
-		if err := node.Encode(ctx); err != nil {
-			return nil, errors.Wrapf(err, "Encode field %s: %s", node.GetName(), err.Error())
-		}
-	}
-	return ctx.Writer.Bytes(), nil
+	err := NodeEncode(ctx, p.ParsedFields...)
+	return ctx.Writer.Bytes(), err
 }

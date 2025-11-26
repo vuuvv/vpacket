@@ -7,10 +7,35 @@ import (
 )
 
 type FramingRuleMatchResult struct {
-	ProtocolName string
-	Advance      int
-	Token        []byte
-	Error        error
+	Protocol  *Protocol
+	Abandoned bool
+	Advance   int
+	Token     []byte
+	Error     error
+}
+
+func NewFramingRuleMatchResult(advance int, token []byte) *FramingRuleMatchResult {
+	return &FramingRuleMatchResult{
+		Advance: advance,
+		Token:   token,
+	}
+}
+
+// AbandonFramingRuleMatchResult 表示丢弃一个数据
+func AbandonFramingRuleMatchResult(size int, data []byte) *FramingRuleMatchResult {
+	return &FramingRuleMatchResult{
+		Abandoned: true,
+		Advance:   size,
+		Token:     []byte{data[0]},
+	}
+}
+
+func WaitFramingRuleMatchResult() *FramingRuleMatchResult {
+	return &FramingRuleMatchResult{}
+}
+
+func ErrorFramingRuleMatchResult(err error) *FramingRuleMatchResult {
+	return &FramingRuleMatchResult{Error: err}
 }
 
 type FramingRule interface {
