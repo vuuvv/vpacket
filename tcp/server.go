@@ -18,7 +18,7 @@ const (
 	DeviceDiscoveryModeSync      = "sync"      // 子设备发现模式,通过服务器查询子设备,然后向子设备发送心跳
 )
 
-type DeviceDiscoveryFunc func(deviceId string, deviceType string) (subDeviceIds []string, err error)
+type DeviceDiscoveryFunc func(sn string, deviceType string) (subDevices []string, err error)
 
 type ServerConfig struct {
 	Address             string              `json:"address"`
@@ -161,29 +161,29 @@ func (s *Server) RemoveConnection(conn *DeviceConnection) {
 	s.RemoveDevice(conn)
 }
 
-func (s *Server) AddDevice(deviceId string, conn *DeviceConnection) {
-	s.devices.Store(deviceId, conn.DeviceKey(deviceId))
+func (s *Server) AddDevice(sn string, conn *DeviceConnection) {
+	s.devices.Store(sn, conn.DeviceKey(sn))
 }
 
 func (s *Server) RemoveDevice(conn *DeviceConnection) {
-	if conn.deviceId != "" {
-		s.removeDevice(conn.deviceId, conn)
+	if conn.sn != "" {
+		s.removeDevice(conn.sn, conn)
 	}
 	for _, subDevice := range conn.subDevices {
 		s.removeDevice(subDevice, conn)
 	}
 }
 
-func (s *Server) removeDevice(deviceId string, conn *DeviceConnection) {
-	if key, ok := s.devices.Load(deviceId); ok {
-		if key == conn.DeviceKey(deviceId) {
-			s.devices.Delete(deviceId)
+func (s *Server) removeDevice(sn string, conn *DeviceConnection) {
+	if key, ok := s.devices.Load(sn); ok {
+		if key == conn.DeviceKey(sn) {
+			s.devices.Delete(sn)
 		}
 	}
 }
 
-func (s *Server) GetDevice(deviceId string) *DeviceConnection {
-	connKey, ok := s.devices.Load(deviceId)
+func (s *Server) GetDevice(sn string) *DeviceConnection {
+	connKey, ok := s.devices.Load(sn)
 	if !ok {
 		return nil
 	}

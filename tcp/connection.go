@@ -22,7 +22,7 @@ type DeviceConnection struct {
 	mu             sync.Mutex
 	ctx            context.Context
 	cancel         context.CancelFunc
-	deviceId       string // 实际的连接设备，可能是设备,dtu,网关等
+	sn             string // 实际的连接设备，可能是设备,dtu,网关等
 	deviceType     string
 	subDevices     []string // 子设备的key(一般是序列号),子设备可以查询服务器获取,或者子设备自己发送心跳(哪种形式应该由服务器进行配置)
 }
@@ -49,8 +49,8 @@ func (this *DeviceConnection) SetKey(key string) {
 	this.key = key
 }
 
-func (this *DeviceConnection) DeviceKey(deviceId string) string {
-	return fmt.Sprintf("%s@%s", deviceId, this.RemoteAddr())
+func (this *DeviceConnection) DeviceKey(sn string) string {
+	return fmt.Sprintf("%s@%s", sn, this.RemoteAddr())
 }
 
 func (this *DeviceConnection) RemoteAddr() string {
@@ -84,7 +84,7 @@ func (this *DeviceConnection) Scan(protocol *core.Scheme) error {
 
 func (this *DeviceConnection) Handle(result *core.ScanResult) error {
 	/// 检查是否是连接设备
-	this.setupDeviceId(result)
+	this.setupDeviceSn(result)
 	this.UpdateActiveTime()
 	if this.server.messageHandle != nil {
 		err := this.server.messageHandle(result)
@@ -95,17 +95,17 @@ func (this *DeviceConnection) Handle(result *core.ScanResult) error {
 	return nil
 }
 
-func (this *DeviceConnection) setupDeviceId(result *core.ScanResult) {
-	deviceId, deviceType := this.getConnectionDeviceId(result)
-	if deviceId == "" || deviceType == "" {
+func (this *DeviceConnection) setupDeviceSn(result *core.ScanResult) {
+	sn, deviceType := this.getConnectionDevice(result)
+	if sn == "" || deviceType == "" {
 		return
 	}
-	this.deviceId = deviceId
+	this.sn = sn
 	this.deviceType = deviceType
-	this.server.AddDevice(deviceId, this)
+	this.server.AddDevice(sn, this)
 }
 
-func (this *DeviceConnection) getConnectionDeviceId(result *core.ScanResult) (string, string) {
+func (this *DeviceConnection) getConnectionDevice(result *core.ScanResult) (string, string) {
 	if result == nil {
 		return "", ""
 	}
@@ -128,7 +128,7 @@ func (this *DeviceConnection) getConnectionDeviceId(result *core.ScanResult) (st
 		return "", ""
 	}
 
-	deviceId, ok := dict["deviceId"].(string)
+	sn, ok := dict["sn"].(string)
 	if !ok {
 		return "", ""
 	}
@@ -138,11 +138,11 @@ func (this *DeviceConnection) getConnectionDeviceId(result *core.ScanResult) (st
 		return "", ""
 	}
 
-	return deviceId, deviceType
+	return sn, deviceType
 }
 
 func (this *DeviceConnection) Heartbeat(duration int, discoveryFunc DeviceDiscoveryFunc, command map[string]any) {
-	if this.deviceId == "" {
+	if this.sn == "" {
 		return
 	}
 
@@ -160,9 +160,9 @@ func (this *DeviceConnection) Heartbeat(duration int, discoveryFunc DeviceDiscov
 		return
 	}
 
-	subDevices, err := discoveryFunc(this.deviceId, this.deviceType)
+	subDevices, err := discoveryFunc(this.sn, this.deviceType)
 	if err != nil {
-		log.Warn(errors.Wrapf(err, "查询子设备失败: %s, %s", this.deviceId, err.Error()), this.zapFields()...)
+		log.Warn(errors.Wrapf(err, "查询子设备失败: %s, %s", this.sn, err.Error()), this.zapFields()...)
 		return
 	}
 	this.subDevices = subDevices

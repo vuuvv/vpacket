@@ -43,7 +43,7 @@ protocols:
         default: 'BB'
         size: 1
 
-      - name: "deviceId"
+      - name: "sn"
         size: 12
 
       - name: "productCode"
@@ -121,7 +121,7 @@ protocols:
       end_delimiter: "s']'"
       max_len: 128
     fields:
-      - name: "deviceId"
+      - name: "sn"
         type: "string"
         size: -1
       - name: "command"

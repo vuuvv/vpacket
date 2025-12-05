@@ -12,7 +12,7 @@ import (
 )
 
 type ScanResult struct {
-	DeviceId    string     `json:"deviceId"`           // 直接连接的设备序列号
+	Sn          string     `json:"sn"`                 // 直接连接的设备序列号
 	Abaddon     bool       `json:"abaddon,omitempty"`  // 是否为丢弃的包
 	Packet      []byte     `json:"packet,omitempty"`   // 为解析的原始包
 	Protocol    *Protocol  `json:"protocol,omitempty"` // 使用的协议

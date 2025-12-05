@@ -155,7 +155,7 @@ func TestEncodeFE(t *testing.T) {
 	scanner := setupTestScanner()
 	text := `
 {
-  "deviceId": "BB8CABCD239EBC45E339E339",
+  "sn": "BB8CABCD239EBC45E339E339",
   "command": "FE"
 }
 `
