@@ -43,28 +43,28 @@ protocols:
         default: 'BB'
         size: 1
 
-      - name: "board_id"
+      - name: "deviceId"
         size: 12
 
-      - name: "product_code"
+      - name: "productCode"
         default: '0000'
         size: 2
 
-      - name: "version_raw"
+      - name: "versionRaw"
         default: '0000'
         size: 2
 
       - name: "command"
         size: 1
 
-      - name: "data_len"
+      - name: "dataLen"
         type: "int"
         size: 2
 
-      - name: "data_crc"
+      - name: "dataCrc"
         crc: "crc16_modbus"
         crc_start: 24
-        crc_end: "vars.packet_len"
+        crc_end: "vars.packetLen"
         size: 2
 
       - type: "switch"
@@ -83,22 +83,22 @@ protocols:
               - name: "data.channel"
                 type: "uint"
                 size: 1
-              - name: "data.id_len"
+              - name: "data.idLen"
                 type: "uint"
                 size: 1
-              - name: "data.card_no"
+              - name: "data.cardNo"
                 type: "string"
-                size_expr: "fields.data.id_len"
-              - name: "data.user_role"
+                size_expr: "fields.data.idLen"
+              - name: "data.userRole"
                 size: 1
                 default: '00'
               - name: "data.room"
                 size: 3
                 default: '000000'
-              - name: "data.start_time"
+              - name: "data.startTime"
                 size: 4
                 default: '00000000'
-              - name: "data.end_time"
+              - name: "data.endTime"
                 size: 4
                 default: '00000000'
 
@@ -120,3 +120,9 @@ protocols:
       - name: "command"
         type: "calc"
         formula: "'heartbeat'"
+      - name: "deviceType"
+        type: "calc"
+        formula: "'dtu'"
+      - name: "connectionDevice"
+        type: "calc"
+        formula: "true"

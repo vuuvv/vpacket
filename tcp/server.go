@@ -15,15 +15,20 @@ import (
 
 const (
 	DeviceDiscoveryModeHeartbeat = "heartbeat" // 子设备发现模式,通过子设备发送心跳来发现
-	DeviceDiscoveryModeSync      = "sync"      // 子设备发现模式,通过服务器查询子设备来发现
+	DeviceDiscoveryModeSync      = "sync"      // 子设备发现模式,通过服务器查询子设备,然后向子设备发送心跳
 )
 
+type DeviceDiscoveryFunc func(deviceId string, deviceType string) (subDeviceIds []string, err error)
+
 type ServerConfig struct {
-	Address             string `json:"address"`
-	ReadBufferSize      int    `json:"readBufferSize"`
-	WriteBufferSize     int    `json:"writeBufferSize"`
-	MaxConnections      int    `json:"maxConnections"`
-	DeviceDiscoveryMode string `json:"deviceDiscoveryMode"` // 子设备发现模式,默认是通过子设备发送心跳来发现
+	Address             string              `json:"address"`
+	ReadBufferSize      int                 `json:"readBufferSize"`
+	WriteBufferSize     int                 `json:"writeBufferSize"`
+	MaxConnections      int                 `json:"maxConnections"`
+	DeviceDiscoveryMode string              `json:"deviceDiscoveryMode"` // 子设备发现模式,默认是通过子设备发送心跳来发现
+	DeviceSyncDuration  int                 `json:"deviceSyncDuration"`  // 查询子设备的时间间隔,并向子设备发送心跳,默认是30秒
+	DeviceDiscoveryFunc DeviceDiscoveryFunc `json:"-"`
+	DeviceDiscoveryCmd  map[string]any      `json:"deviceDiscoveryCmd"`
 }
 
 type Server struct {
@@ -34,18 +39,18 @@ type Server struct {
 	wg               sync.WaitGroup
 	ctx              context.Context
 	cancel           context.CancelFunc
-	protocol         *core.Scheme
+	scheme           *core.Scheme
 	connectionCounts int32
-	messageHandle    func(result *core.ScanResult)
+	messageHandle    func(result *core.ScanResult) error
 }
 
-func NewTCPServer(config *ServerConfig, protocol *core.Scheme) *Server {
+func NewTCPServer(config *ServerConfig, scheme *core.Scheme) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Server{
-		config:   config,
-		protocol: protocol,
-		ctx:      ctx,
-		cancel:   cancel,
+		config: config,
+		scheme: scheme,
+		ctx:    ctx,
+		cancel: cancel,
 		//readBufferSize:  4096,
 		//writeBufferSize: 4096,
 		//maxConnections:  10000,
@@ -55,10 +60,10 @@ func NewTCPServer(config *ServerConfig, protocol *core.Scheme) *Server {
 // RegisterProtocol 注册协议
 //func (s *TCPServer) RegisterProtocol(meta *ProtocolMeta) error {
 //	if _, exists := s.protocols[meta.Name]; exists {
-//		return fmt.Errorf("protocol %s already registered", meta.Name)
+//		return fmt.Errorf("scheme %s already registered", meta.Name)
 //	}
 //	s.protocols[meta.Name] = meta
-//	log.Printf("Registered protocol: %s (type: %s, delimiter: %s)",
+//	log.Printf("Registered scheme: %s (type: %s, delimiter: %s)",
 //		meta.Name, meta.Type, meta.Delimiter)
 //	return nil
 //}
@@ -108,6 +113,10 @@ func (s *Server) Start() error {
 	}
 }
 
+func (s *Server) MessageHandle(fn func(result *core.ScanResult) error) {
+	s.messageHandle = fn
+}
+
 func (s *Server) acceptConnection() bool {
 	current := atomic.LoadInt32(&s.connectionCounts)
 	if current >= int32(s.config.MaxConnections) {
@@ -136,7 +145,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 
 	deviceConn := NewDeviceConnection(s, conn)
 	defer s.RemoveConnection(deviceConn)
-	err = deviceConn.Scan(s.protocol)
+	err = deviceConn.Scan(s.scheme)
 	if err != nil {
 		log.Warn(errors.Wrap(err, "Scan fail"), deviceConn.zapFields()...)
 		return
@@ -222,7 +231,14 @@ func (s *Server) connectionCleaner() {
 			return
 		case <-ticker.C:
 			count := 0
-			s.connections.Range(func(key, value interface{}) bool {
+			s.connections.Range(func(key, value any) bool {
+				conn, ok := value.(*DeviceConnection)
+				if !ok {
+					return true
+				}
+				if s.config.DeviceDiscoveryMode == DeviceDiscoveryModeSync {
+					conn.Heartbeat(s.config.DeviceSyncDuration, s.config.DeviceDiscoveryFunc, s.config.DeviceDiscoveryCmd)
+				}
 				count++
 				return true
 			})

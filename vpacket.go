@@ -33,8 +33,14 @@ var NewCodecFromFile = core.NewCodecFromFile
 
 type TcpServer = tcp.Server
 type TcpServerConfig = tcp.ServerConfig
+type DeviceDiscoveryFunc = tcp.DeviceDiscoveryFunc
 
 var NewTcpServer = tcp.NewTCPServer
+
+const (
+	DeviceDiscoveryModeHeartbeat = tcp.DeviceDiscoveryModeHeartbeat
+	DeviceDiscoveryModeSync      = tcp.DeviceDiscoveryModeSync
+)
 
 func Setup() {
 	var logger *zap.Logger

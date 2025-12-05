@@ -61,9 +61,9 @@ func TestDsl(t *testing.T) {
   "data": {
     "card_no": "05242",
     "channel": 1,
-    "id_len": 5
+    "idLen": 5
   },
-  "data_crc": 3595
+  "dataCrc": 3595
 }
 `
 	fields := map[string]any{}

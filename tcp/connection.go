@@ -3,6 +3,7 @@ package tcp
 import (
 	"context"
 	"fmt"
+	"github.com/vuuvv/errors"
 	"github.com/vuuvv/vpacket/core"
 	"github.com/vuuvv/vpacket/utils"
 	"go.uber.org/zap"
@@ -17,10 +18,12 @@ type DeviceConnection struct {
 	conn           net.Conn
 	key            string
 	lastActiveTime time.Time
+	heartbeatTime  time.Time
 	mu             sync.Mutex
 	ctx            context.Context
 	cancel         context.CancelFunc
-	deviceId       string   // 实际的连接设备，可能是设备,dtu,网关等
+	deviceId       string // 实际的连接设备，可能是设备,dtu,网关等
+	deviceType     string
 	subDevices     []string // 子设备的key(一般是序列号),子设备可以查询服务器获取,或者子设备自己发送心跳(哪种形式应该由服务器进行配置)
 }
 
@@ -80,12 +83,91 @@ func (this *DeviceConnection) Scan(protocol *core.Scheme) error {
 }
 
 func (this *DeviceConnection) Handle(result *core.ScanResult) error {
-	fmt.Printf("%02x\n", result.Packet)
-	if this.server.messageHandle != nil {
-		this.server.messageHandle(result)
-	}
+	/// 检查是否是连接设备
+	this.setupDeviceId(result)
 	this.UpdateActiveTime()
+	if this.server.messageHandle != nil {
+		err := this.server.messageHandle(result)
+		if err != nil {
+			log.Error(err, this.zapFields()...)
+		}
+	}
 	return nil
+}
+
+func (this *DeviceConnection) setupDeviceId(result *core.ScanResult) {
+	deviceId, deviceType := this.getConnectionDeviceId(result)
+	if deviceId == "" || deviceType == "" {
+		return
+	}
+	this.deviceId = deviceId
+	this.deviceType = deviceType
+	this.server.AddDevice(deviceId, this)
+}
+
+func (this *DeviceConnection) getConnectionDeviceId(result *core.ScanResult) (string, string) {
+	if result == nil {
+		return "", ""
+	}
+
+	if result.Data == nil {
+		return "", ""
+	}
+
+	dict, ok := result.Data.(map[string]any)
+	if !ok {
+		return "", ""
+	}
+
+	isConnectionDevice, ok := dict["connectionDevice"].(bool)
+	if !ok {
+		return "", ""
+	}
+
+	if !isConnectionDevice {
+		return "", ""
+	}
+
+	deviceId, ok := dict["deviceId"].(string)
+	if !ok {
+		return "", ""
+	}
+
+	deviceType, ok := dict["deviceType"].(string)
+	if !ok {
+		return "", ""
+	}
+
+	return deviceId, deviceType
+}
+
+func (this *DeviceConnection) Heartbeat(duration int, discoveryFunc DeviceDiscoveryFunc, command map[string]any) {
+	if this.deviceId == "" {
+		return
+	}
+
+	if discoveryFunc == nil {
+		log.Warn("未设置子设备发现函数", this.zapFields()...)
+		return
+	}
+
+	if command == nil {
+		log.Warn("未设置子设备发现命令", this.zapFields()...)
+		return
+	}
+
+	if time.Since(this.heartbeatTime) < time.Duration(duration)*time.Second {
+		return
+	}
+
+	subDevices, err := discoveryFunc(this.deviceId, this.deviceType)
+	if err != nil {
+		log.Warn(errors.Wrapf(err, "查询子设备失败: %s, %s", this.deviceId, err.Error()), this.zapFields()...)
+		return
+	}
+	this.subDevices = subDevices
+
+	this.heartbeatTime = time.Now()
 }
 
 func (this *DeviceConnection) checkCancel() {
