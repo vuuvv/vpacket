@@ -9,59 +9,12 @@ type SwitchNode struct {
 	FieldName   string
 	Cases       map[any][]core.Node
 	DefaultCase []core.Node
-}
-
-func (this *SwitchNode) GetName() string {
-	return "switch"
-}
-
-func (n *SwitchNode) Decode(ctx *core.Context) error {
-	nodes, err := n.getNodesToExecute(ctx)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-
-	return core.NodeDecode(ctx, nodes...)
-}
-
-func (n *SwitchNode) Encode(ctx *core.Context) error {
-	nodes, err := n.getNodesToExecute(ctx)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	// 执行节点编码
-	return core.NodeEncode(ctx, nodes...)
-}
-
-func (n *SwitchNode) getNodesToExecute(ctx *core.Context) ([]core.Node, error) {
-	switchValue, ok := ctx.GetField(n.FieldName)
-	if !ok {
-		return nil, errors.Errorf("switch field '%s' not found in context", n.FieldName)
-	}
-
-	var nodesToExecute []core.Node
-	var caseKey any
-
-	// Handle uint64 case keys for command parsing
-	if uval, isUint := switchValue.(uint64); isUint {
-		caseKey = uval
-	} else {
-		caseKey = switchValue
-	}
-
-	if nodes, found := n.Cases[caseKey]; found {
-		nodesToExecute = nodes
-	} else if n.DefaultCase != nil {
-		nodesToExecute = n.DefaultCase
-	} else {
-		return nil, errors.Errorf("command value %v not supported for payload parsing, no default case defined", switchValue)
-	}
-
-	return nodesToExecute, nil
+	Flow        string
 }
 
 func (n *SwitchNode) Compile(yf *core.YamlField, structures core.DataStructures) error {
 	n.FieldName = yf.Field
+	n.Flow = yf.Flow
 	n.Cases = make(map[any][]core.Node)
 
 	// 编译所有 Cases (混合模式)
@@ -115,6 +68,58 @@ func (n *SwitchNode) Compile(yf *core.YamlField, structures core.DataStructures)
 	}
 
 	return nil
+}
+
+func (this *SwitchNode) GetName() string {
+	return "switch"
+}
+
+func (this *SwitchNode) GetFlow() string {
+	return this.Flow
+}
+func (n *SwitchNode) Decode(ctx *core.Context) error {
+	nodes, err := n.getNodesToExecute(ctx)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+
+	return core.NodeDecode(ctx, nodes...)
+}
+
+func (n *SwitchNode) Encode(ctx *core.Context) error {
+	nodes, err := n.getNodesToExecute(ctx)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	// 执行节点编码
+	return core.NodeEncode(ctx, nodes...)
+}
+
+func (n *SwitchNode) getNodesToExecute(ctx *core.Context) ([]core.Node, error) {
+	switchValue, ok := ctx.GetField(n.FieldName)
+	if !ok {
+		return nil, errors.Errorf("switch field '%s' not found in context", n.FieldName)
+	}
+
+	var nodesToExecute []core.Node
+	var caseKey any
+
+	// Handle uint64 case keys for command parsing
+	if uval, isUint := switchValue.(uint64); isUint {
+		caseKey = uval
+	} else {
+		caseKey = switchValue
+	}
+
+	if nodes, found := n.Cases[caseKey]; found {
+		nodesToExecute = nodes
+	} else if n.DefaultCase != nil {
+		nodesToExecute = n.DefaultCase
+	} else {
+		return nil, errors.Errorf("command value %v not supported for payload parsing, no default case defined", switchValue)
+	}
+
+	return nodesToExecute, nil
 }
 
 func registerSwitch() {

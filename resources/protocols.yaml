@@ -78,7 +78,8 @@ protocols:
               - name: "data.value"
                 type: "uint"
                 size: 1
-          - value: "C3"
+          - value: "C3" # 刷卡信息上报
+            flow: "decode" # 只用于解码流程
             fields:
               - name: "data.channel"
                 type: "uint"
@@ -101,6 +102,12 @@ protocols:
               - name: "data.endTime"
                 size: 4
                 default: '00000000'
+          - value: "FE" # 读取设备ID指令
+            fields:
+              - name: "data.success"
+                flow: "decode" # 设备响应
+                type: "uint"
+                size: 1
 
         # 默认处理 (外部引用)
         default_ref: "Unknown_Payload"

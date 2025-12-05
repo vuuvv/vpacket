@@ -11,7 +11,7 @@ type YamlSwitchCase struct {
 
 type YamlField struct {
 	Name      string       `yaml:"name"`
-	Action    string       `yaml:"action"` // 动作, decode: 读取,解码, encode: 写入,编码, 如果不写则都包括
+	Flow      string       `yaml:"flow"` // 流程类型, 为空表示所有流程都包括, 其它的有 "encode", "decode"
 	Bits      int          `yaml:"bits"`
 	Type      string       `yaml:"type"`
 	Size      int          `yaml:"size"`

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"time"
+	"vuuvv.cn/unisoftcn/orca/serialize"
 )
 
 type ScanResult struct {
@@ -98,7 +99,16 @@ func (this *Codec) Encode(input map[string]any) ([]byte, error) {
 
 	ctx := NewContext(nil)
 	ctx.Fields = input
+	ctx.Flow = FlowEncode
 	return protocol.Encode(ctx)
+}
+
+func (this *Codec) EncodeFromJson(input string) ([]byte, error) {
+	data, err := serialize.JsonParsePrimitive[map[string]any](input)
+	if err != nil {
+		return nil, err
+	}
+	return this.Encode(data)
 }
 
 func (this *Codec) Scan(fn ScanResultHandler) error {

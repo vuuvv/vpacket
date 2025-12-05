@@ -23,6 +23,7 @@ type Node interface {
 	Decode(ctx *Context) error
 	Encode(ctx *Context) error
 	GetName() string
+	GetFlow() string
 	Compile(fields *YamlField, structures DataStructures) error
 }
 
@@ -73,6 +74,9 @@ func NodeCompile(fields []*YamlField, structures DataStructures) ([]Node, error)
 
 func NodeEncode(ctx *Context, nodes ...Node) error {
 	for _, node := range nodes {
+		if !ctx.MatchFlow(node) {
+			continue
+		}
 		if err := node.Encode(ctx); err != nil {
 			return errors.Wrapf(err, "Encode field %s failure: %s", node.GetName(), err.Error())
 		}
@@ -82,8 +86,11 @@ func NodeEncode(ctx *Context, nodes ...Node) error {
 
 func NodeDecode(ctx *Context, nodes ...Node) error {
 	for _, node := range nodes {
+		if !ctx.MatchFlow(node) {
+			continue
+		}
 		if err := node.Decode(ctx); err != nil {
-			return errors.Wrapf(err, "Decode field %s failure: %s", node.GetName(), err.Error())
+			return errors.Wrapf(err, "Decode field '%s' failure: %s", node.GetName(), err.Error())
 		}
 	}
 	return nil

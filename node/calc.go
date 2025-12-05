@@ -7,11 +7,26 @@ import (
 
 type CalcNode struct {
 	Name    string
+	Flow    string
 	Formula *core.CelEvaluator
+}
+
+func (n *CalcNode) Compile(yf *core.YamlField, structures core.DataStructures) error {
+	expr, err := core.CompileExpression(yf.Formula)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	n.Name = yf.Name
+	n.Flow = yf.Flow
+	n.Formula = expr
+	return nil
 }
 
 func (this *CalcNode) GetName() string {
 	return this.Name
+}
+func (this *CalcNode) GetFlow() string {
+	return this.Flow
 }
 
 func (n *CalcNode) Decode(ctx *core.Context) error {
@@ -24,16 +39,6 @@ func (n *CalcNode) Decode(ctx *core.Context) error {
 }
 
 func (n *CalcNode) Encode(ctx *core.Context) error {
-	return nil
-}
-
-func (n *CalcNode) Compile(yf *core.YamlField, structures core.DataStructures) error {
-	expr, err := core.CompileExpression(yf.Formula)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	n.Name = yf.Name
-	n.Formula = expr
 	return nil
 }
 

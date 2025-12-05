@@ -3,20 +3,39 @@ package vpacket
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/vuuvv/vpacket/core"
 	"log"
 	"os"
 	"testing"
 )
 
-func TestDsl(t *testing.T) {
+func setupTestScanner(file ...string) *core.Codec {
+	filePath := "./resources/protocols.yaml"
+	if len(file) > 0 {
+		filePath = file[0]
+	}
 	Setup()
 	// 1. 加载协议配置
-	yamlBytes, err := os.ReadFile("./resources/protocols.yaml")
+	yamlBytes, err := os.ReadFile(filePath)
 	if err != nil {
-		log.Fatal("Error reading protocols.yaml:", err)
+		panic(err)
+		//fmt.Printf("%+v\n", err)
+		//return nil
 	}
+	scanner, err := NewCodecFromBytes(yamlBytes)
+	if err != nil {
+		panic(err)
+		//fmt.Printf("%+v\n", err)
+		//return nil
+	}
+	return scanner
+}
+
+func TestDsl(t *testing.T) {
+	scanner := setupTestScanner()
 
 	// 模拟数据
 	mockStream := new(bytes.Buffer)
@@ -32,14 +51,7 @@ func TestDsl(t *testing.T) {
 
 	fmt.Printf(">>> 模拟混合流总长度: %d bytes\n", mockStream.Len())
 
-	// 预处理和编译 DSL
-	scanner, err := NewCodecFromBytes(yamlBytes)
-	if err != nil {
-		fmt.Printf("%+v\n", err)
-		return
-	}
-
-	err = scanner.Stream(mockStream).Scan(func(result *ScanResult) error {
+	err := scanner.Stream(mockStream).Scan(func(result *ScanResult) error {
 		printJson(result.Data)
 		if result.HandleError != nil {
 			fmt.Println(result.HandleError)
@@ -66,13 +78,7 @@ func TestDsl(t *testing.T) {
   "dataCrc": 3595
 }
 `
-	fields := map[string]any{}
-	err = json.Unmarshal([]byte(text), &fields)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	bs, err := scanner.Encode(fields)
+	bs, err := scanner.EncodeFromJson(text)
 
 	if err != nil {
 		fmt.Printf("%+v", err)
@@ -143,6 +149,50 @@ func TestDsl(t *testing.T) {
 	//if err := scanner.Err(); err != nil {
 	//	log.Printf("Codec Error: %v", err)
 	//}
+}
+
+func TestEncodeFE(t *testing.T) {
+	scanner := setupTestScanner()
+	text := `
+{
+  "deviceId": "BB8CABCD239EBC45E339E339",
+  "command": "FE"
+}
+`
+	bs, err := scanner.EncodeFromJson(text)
+
+	if err != nil {
+		fmt.Printf("%+v", err)
+		log.Fatal(err)
+	}
+
+	fmt.Printf(">>> 编码结果: %x\n", bs)
+}
+
+func TestDecodeFE(t *testing.T) {
+	scanner := setupTestScanner()
+	bs, err := hex.DecodeString("7273bbbb8cabcd239ebc45e339e33900000000fe000140BF00")
+	if err != nil {
+		fmt.Printf("%+v\n", err)
+		return
+	}
+	mockStream := new(bytes.Buffer)
+	mockStream.Write(bs)
+
+	err = scanner.Stream(mockStream).Scan(func(result *ScanResult) error {
+		printJson(result.Data)
+		if result.HandleError != nil {
+			fmt.Println(result.HandleError)
+		}
+		if result.ScanError != nil {
+			fmt.Println(result.ScanError)
+		}
+		return nil
+	})
+	if err != nil {
+		fmt.Printf("%+v\n", err)
+		return
+	}
 }
 
 // 辅助函数：构造二进制包 (command: 1-byte, dataLen: 2-byte)

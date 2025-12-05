@@ -36,6 +36,7 @@ func (p *Protocol) Setup(structures DataStructures) error {
 
 func (p *Protocol) Decode(packet []byte) (any, error) {
 	ctx := NewContext(packet)
+	ctx.Flow = FlowDecode
 	ctx.Vars["packetLen"] = len(packet)
 	err := NodeDecode(ctx, p.ParsedFields...)
 	return ctx.Fields, err

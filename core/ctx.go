@@ -9,6 +9,11 @@ import (
 	"strings"
 )
 
+const (
+	FlowEncode = "encode"
+	FlowDecode = "decode"
+)
+
 type Context struct {
 	Writer  bytes.Buffer
 	Data    []byte // 解析时使用
@@ -16,6 +21,7 @@ type Context struct {
 	BitPos  int
 	Fields  map[string]any // 字段值
 	Vars    map[string]any // 变量值
+	Flow    string         // 表明当前处理的流程,编码或解码
 }
 
 func NewContext(data []byte) *Context {
@@ -121,6 +127,13 @@ func (c *Context) GetField(name string) (any, bool) {
 
 	// 理论上代码不会执行到这里
 	return nil, false
+}
+
+func (c *Context) MatchFlow(node Node) bool {
+	if node.GetFlow() == "" {
+		return true
+	}
+	return node.GetFlow() == c.Flow
 }
 
 func (c *Context) ReadBits(n int) (uint64, error) {

@@ -13,6 +13,7 @@ import (
 
 type BytesNode struct {
 	Name        string
+	Flow        string
 	Type        string
 	Size        int
 	SizeExpr    *core.CelEvaluator
@@ -28,8 +29,73 @@ type BytesNode struct {
 	PadPosition string
 }
 
+func (this *BytesNode) Compile(yf *core.YamlField, structures core.DataStructures) error {
+	this.Name = yf.Name
+	this.Flow = yf.Flow
+	this.Size = yf.Size
+	this.Bits = yf.Bits
+	this.Type = yf.Type
+	this.Crc = yf.Crc
+	this.HasDefault = !yf.Default.IsZero()
+
+	if this.Type == "" {
+		this.Type = core.NodeTypeHex
+	}
+
+	this.ByteOrder = this.GetByteOrder(yf.Endian)
+
+	if yf.SizeExpr != "" {
+		expr, err := core.CompileExpression(yf.SizeExpr)
+		if err != nil {
+			return errors.Wrapf(err, "Compile 'size_expr' of field %s: %s", this.Name, err.Error())
+		}
+		this.SizeExpr = expr
+	}
+
+	if yf.Check != "" {
+		expr, err := core.CompileExpression(yf.Check)
+		if err != nil {
+			return errors.Wrapf(err, "Compile 'check' of field %s: %s", this.Name, err.Error())
+		}
+		this.Check = expr
+	}
+
+	if this.Crc != "" {
+		if yf.CrcStart != "" {
+			expr, err := core.CompileExpression(yf.CrcStart)
+			if err != nil {
+				return errors.Wrapf(err, "Compile crc_start of field %s: %s", this.Name, err.Error())
+			}
+			this.CrcStart = expr
+		}
+		if yf.CrcEnd != "" {
+			expr, err := core.CompileExpression(yf.CrcEnd)
+			if err != nil {
+				return errors.Wrapf(err, "Compile crc_end of field %s: %s", this.Name, err.Error())
+			}
+			this.CrcEnd = expr
+		}
+	}
+
+	if this.HasDefault {
+		defaultVal, err := utils.YamlDecode[string](&yf.Default)
+		if err != nil {
+			return err
+		}
+		this.Default, err = utils.ParseTValue(*defaultVal, this.Size, this.ByteOrder)
+		if err != nil {
+			return errors.Wrapf(err, "Compile 'default' of field %s: %s", this.Name, err.Error())
+		}
+	}
+
+	return nil
+}
+
 func (this *BytesNode) GetName() string {
 	return this.Name
+}
+func (this *BytesNode) GetFlow() string {
+	return this.Flow
 }
 
 func (this *BytesNode) GetByteOrder(byteOrderKey string) (byteOrder binary.ByteOrder) {
@@ -213,7 +279,7 @@ func (this *BytesNode) crc(ctx *core.Context) (uint64, error) {
 		endOffset = ctx.BytePos - (this.Bits / 8)
 	}
 
-	if startOffset < 0 || endOffset > len(ctx.Data) || startOffset >= endOffset {
+	if startOffset < 0 || endOffset > len(ctx.Data) || startOffset > endOffset {
 		return 0, errors.Errorf("invalid dynamic CRC scope: start=%d, end=%d, total_len=%d", startOffset, endOffset, len(ctx.Data))
 	}
 
@@ -294,67 +360,6 @@ func (this *BytesNode) WriteFloat(ctx *core.Context, val any, size int) error {
 		return errors.Errorf("value of '%s' should be a float, '%v'", this.Name, val)
 	}
 	return ctx.WriteFloat(f, size, this.ByteOrder)
-}
-
-func (this *BytesNode) Compile(yf *core.YamlField, structures core.DataStructures) error {
-	this.Name = yf.Name
-	this.Size = yf.Size
-	this.Bits = yf.Bits
-	this.Type = yf.Type
-	this.Crc = yf.Crc
-	this.HasDefault = !yf.Default.IsZero()
-
-	if this.Type == "" {
-		this.Type = core.NodeTypeHex
-	}
-
-	this.ByteOrder = this.GetByteOrder(yf.Endian)
-
-	if yf.SizeExpr != "" {
-		expr, err := core.CompileExpression(yf.SizeExpr)
-		if err != nil {
-			return errors.Wrapf(err, "Compile 'size_expr' of field %s: %s", this.Name, err.Error())
-		}
-		this.SizeExpr = expr
-	}
-
-	if yf.Check != "" {
-		expr, err := core.CompileExpression(yf.Check)
-		if err != nil {
-			return errors.Wrapf(err, "Compile 'check' of field %s: %s", this.Name, err.Error())
-		}
-		this.Check = expr
-	}
-
-	if this.Crc != "" {
-		if yf.CrcStart != "" {
-			expr, err := core.CompileExpression(yf.CrcStart)
-			if err != nil {
-				return errors.Wrapf(err, "Compile crc_start of field %s: %s", this.Name, err.Error())
-			}
-			this.CrcStart = expr
-		}
-		if yf.CrcEnd != "" {
-			expr, err := core.CompileExpression(yf.CrcEnd)
-			if err != nil {
-				return errors.Wrapf(err, "Compile crc_end of field %s: %s", this.Name, err.Error())
-			}
-			this.CrcEnd = expr
-		}
-	}
-
-	if this.HasDefault {
-		defaultVal, err := utils.YamlDecode[string](&yf.Default)
-		if err != nil {
-			return err
-		}
-		this.Default, err = utils.ParseTValue(*defaultVal, this.Size, this.ByteOrder)
-		if err != nil {
-			return errors.Wrapf(err, "Compile 'default' of field %s: %s", this.Name, err.Error())
-		}
-	}
-
-	return nil
 }
 
 func registerBytes() {
