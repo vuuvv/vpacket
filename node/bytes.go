@@ -3,35 +3,33 @@ package node
 import (
 	"bytes"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"github.com/vuuvv/errors"
 	"github.com/vuuvv/vpacket/core"
 	"github.com/vuuvv/vpacket/utils"
-	"math"
 )
 
 type BytesNode struct {
-	Name        string
-	Flow        string
-	Type        string
-	Size        int
-	SizeExpr    *core.CelEvaluator
-	Default     []byte
-	HasDefault  bool
-	Bits        int
-	Check       *core.CelEvaluator
-	ByteOrder   binary.ByteOrder
-	Crc         string
-	CrcStart    *core.CelEvaluator
-	CrcEnd      *core.CelEvaluator
-	PadByte     byte
-	PadPosition string
+	core.BaseNode
+	core.BaseEncodable
+	Type       string
+	Size       int
+	SizeExpr   *core.CelEvaluator
+	Default    []byte
+	HasDefault bool
+	Bits       int
+	Check      *core.CelEvaluator
+	Crc        string
+	CrcStart   *core.CelEvaluator
+	CrcEnd     *core.CelEvaluator
 }
 
 func (this *BytesNode) Compile(yf *core.YamlField, structures core.DataStructures) error {
-	this.Name = yf.Name
-	this.Flow = yf.Flow
+	_ = this.BaseNode.Compile(yf, structures)
+	err := this.BaseEncodable.Compile(yf, structures)
+	if err != nil {
+		return errors.WithStack(err)
+	}
 	this.Size = yf.Size
 	this.Bits = yf.Bits
 	this.Type = yf.Type
@@ -41,8 +39,6 @@ func (this *BytesNode) Compile(yf *core.YamlField, structures core.DataStructure
 	if this.Type == "" {
 		this.Type = core.NodeTypeHex
 	}
-
-	this.ByteOrder = this.GetByteOrder(yf.Endian)
 
 	if yf.SizeExpr != "" {
 		expr, err := core.CompileExpression(yf.SizeExpr)
@@ -89,21 +85,6 @@ func (this *BytesNode) Compile(yf *core.YamlField, structures core.DataStructure
 	}
 
 	return nil
-}
-
-func (this *BytesNode) GetName() string {
-	return this.Name
-}
-func (this *BytesNode) GetFlow() string {
-	return this.Flow
-}
-
-func (this *BytesNode) GetByteOrder(byteOrderKey string) (byteOrder binary.ByteOrder) {
-	byteOrder = binary.BigEndian
-	if byteOrderKey == "litter" {
-		byteOrder = binary.LittleEndian
-	}
-	return byteOrder
 }
 
 func (this *BytesNode) Decode(ctx *core.Context) (err error) {
@@ -162,32 +143,6 @@ func (this *BytesNode) Decode(ctx *core.Context) (err error) {
 	return nil
 }
 
-func (this *BytesNode) getSize(ctx *core.Context) (int, error) {
-	size := this.Size
-	if this.SizeExpr != nil {
-		val, err := this.SizeExpr.Execute(ctx)
-		if err != nil {
-			return 0, errors.WithStack(err)
-		}
-		switch v := val.(type) {
-		case int64:
-			size = int(v)
-		case uint64:
-			size = int(v)
-		case float32:
-			size = int(math.Round(float64(v)))
-		case float64:
-			size = int(math.Round(v))
-		default:
-			return 0, errors.Errorf("size expr return invalid type: %T", val)
-		}
-	}
-	//if size < 0 {
-	//	return 0, errors.Errorf("negative size: %d", size)
-	//}
-	return size, nil
-}
-
 func (this *BytesNode) readBits(ctx *core.Context) (any, error) {
 	val, err := ctx.ReadBits(this.Bits)
 	if err != nil {
@@ -197,7 +152,7 @@ func (this *BytesNode) readBits(ctx *core.Context) (any, error) {
 }
 
 func (this *BytesNode) readBytes(ctx *core.Context) (any, error) {
-	readSize, err := this.getSize(ctx)
+	readSize, err := ctx.GetSize(this.Size, this.SizeExpr)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -287,7 +242,7 @@ func (this *BytesNode) crc(ctx *core.Context) (uint64, error) {
 }
 
 func (this *BytesNode) Encode(ctx *core.Context) error {
-	size, err := this.getSize(ctx)
+	size, err := ctx.GetSize(this.Size, this.SizeExpr)
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -296,70 +251,37 @@ func (this *BytesNode) Encode(ctx *core.Context) error {
 		return nil
 	}
 
-	if this.Crc != "" {
-		this.Type = "uint"
+	if ctx.Round > this.GetRound() { // 编译的轮次大于节点轮次，跳过
+		return nil
 	}
 
-	val, ok := ctx.GetField(this.Name)
-	if !ok {
-		if !this.HasDefault {
-			return ctx.WritePlaceholder(size)
-		} else {
-			return ctx.WriteBytes(this.Default)
+	if ctx.Round < this.GetRound() { // 编译的轮次小于节点轮次，写入占位符
+		return ctx.WritePlaceholder(size)
+	}
+
+	var val any
+	var ok bool
+
+	if this.Crc != "" {
+		this.Type = "uint"
+		crcVal, err := this.crc(ctx)
+		if err != nil {
+			return err
+		}
+		val = crcVal
+	} else {
+		val, ok = ctx.GetField(this.Name)
+		if !ok {
+			// 如果从输入中没有获取到对应的字段, 则根据是否有默认值来判断是否写入默认值, 没有的话写0补充
+			if this.HasDefault {
+				return ctx.WriteBytes(this.Default)
+			} else {
+				return ctx.WritePlaceholder(size)
+			}
 		}
 	}
 
-	switch this.Type {
-	case "", core.NodeTypeHex:
-		return this.WriteHex(ctx, val, size)
-	case core.NodeTypeString:
-		return this.WriteString(ctx, val, size)
-	case core.NodeTypeInt:
-		return this.WriteUint(ctx, val, size)
-	case core.NodeTypeUint:
-		return this.WriteUint(ctx, val, size)
-	case core.NodeTypeFloat:
-		return this.WriteFloat(ctx, val, size)
-	}
-	return nil
-}
-
-func (this *BytesNode) WriteHex(ctx *core.Context, val any, size int) error {
-	str, ok := val.(string)
-	if !ok {
-		return errors.Errorf("value of '%s' should be a string, '%v'", this.Name, val)
-	}
-
-	bs, err := hex.DecodeString(str)
-	if err != nil {
-		return errors.Errorf("value of '%s' should be a valid hex string, '%s'", this.Name, str)
-	}
-
-	return ctx.WriteBytes(utils.ResizeBytes(bs, size, this.PadByte, this.PadPosition))
-}
-
-func (this *BytesNode) WriteString(ctx *core.Context, val any, size int) error {
-	str, ok := val.(string)
-	if !ok {
-		return errors.Errorf("value of '%s' should be a string, '%v'", this.Name, val)
-	}
-	return ctx.WriteBytes(utils.ResizeBytes([]byte(str), size, this.PadByte, this.PadPosition))
-}
-
-func (this *BytesNode) WriteUint(ctx *core.Context, val any, size int) error {
-	i, ok := utils.ToUint64(val)
-	if !ok {
-		return errors.Errorf("value of '%s' should be a int, '%v'", this.Name, val)
-	}
-	return ctx.WriteInt(i, size, this.ByteOrder)
-}
-
-func (this *BytesNode) WriteFloat(ctx *core.Context, val any, size int) error {
-	f, ok := utils.ToFloat64(val)
-	if !ok {
-		return errors.Errorf("value of '%s' should be a float, '%v'", this.Name, val)
-	}
-	return ctx.WriteFloat(f, size, this.ByteOrder)
+	return ctx.Write(this.Type, val, size, this)
 }
 
 func registerBytes() {

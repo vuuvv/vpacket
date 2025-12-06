@@ -2,6 +2,7 @@ package tcp
 
 import (
 	"context"
+	"fmt"
 	"github.com/vuuvv/errors"
 	"github.com/vuuvv/vpacket/core"
 	"github.com/vuuvv/vpacket/log"
@@ -161,23 +162,27 @@ func (s *Server) RemoveConnection(conn *DeviceConnection) {
 	s.RemoveDevice(conn)
 }
 
-func (s *Server) AddDevice(sn string, conn *DeviceConnection) {
-	s.devices.Store(sn, conn.DeviceKey(sn))
+func (s *Server) AddDevice(conn *DeviceConnection, snList ...string) {
+	for _, sn := range snList {
+		s.devices.Store(sn, conn.key)
+	}
 }
 
 func (s *Server) RemoveDevice(conn *DeviceConnection) {
 	if conn.sn != "" {
-		s.removeDevice(conn.sn, conn)
+		s.RemoveDeviceSn(conn, conn.sn)
 	}
 	for _, subDevice := range conn.subDevices {
-		s.removeDevice(subDevice, conn)
+		s.RemoveDeviceSn(conn, subDevice)
 	}
 }
 
-func (s *Server) removeDevice(sn string, conn *DeviceConnection) {
-	if key, ok := s.devices.Load(sn); ok {
-		if key == conn.DeviceKey(sn) {
-			s.devices.Delete(sn)
+func (s *Server) RemoveDeviceSn(conn *DeviceConnection, snList ...string) {
+	for _, sn := range snList {
+		if key, ok := s.devices.Load(sn); ok {
+			if key == conn.key {
+				s.devices.Delete(sn)
+			}
 		}
 	}
 }
@@ -192,6 +197,14 @@ func (s *Server) GetDevice(sn string) *DeviceConnection {
 		return nil
 	}
 	return conn.(*DeviceConnection)
+}
+
+func (s *Server) SendCommand(sn string, data map[string]any) error {
+	conn := s.GetDevice(sn)
+	if conn == nil {
+		return fmt.Errorf("device '%s' not found", sn)
+	}
+	return conn.SendCommand(data)
 }
 
 // heartbeatMonitor 心跳监控

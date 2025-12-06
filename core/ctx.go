@@ -3,9 +3,10 @@ package core
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
+	"encoding/hex"
 	"github.com/vuuvv/errors"
 	"github.com/vuuvv/vpacket/utils"
+	"math"
 	"strings"
 )
 
@@ -15,20 +16,25 @@ const (
 )
 
 type Context struct {
-	Writer  bytes.Buffer
-	Data    []byte // 解析时使用
-	BytePos int
-	BitPos  int
-	Fields  map[string]any // 字段值
-	Vars    map[string]any // 变量值
-	Flow    string         // 表明当前处理的流程,编码或解码
+	Writer      bytes.Buffer
+	Data        []byte // 解析时使用
+	BytePos     int
+	BitPos      int
+	Fields      map[string]any // 字段值
+	Vars        map[string]any // 变量值
+	Offsets     map[string]int // 字段的偏移量
+	Flow        string         // 表明当前处理的流程,编码或解码
+	Round       int            // 编码的第几轮
+	NodeOffsets []int          // 正在处理的node的索引, 每个node有一个起始位置
+	NodeIndex   int
 }
 
 func NewContext(data []byte) *Context {
 	return &Context{
-		Data:   data,
-		Vars:   make(map[string]any),
-		Fields: make(map[string]any),
+		Data:    data,
+		Vars:    make(map[string]any),
+		Fields:  make(map[string]any),
+		Offsets: make(map[string]int),
 	}
 }
 
@@ -136,6 +142,35 @@ func (c *Context) MatchFlow(node Node) bool {
 	return node.GetFlow() == c.Flow
 }
 
+func (c *Context) MatchRound(node Node) bool {
+	return node.GetRound() == c.Round
+}
+
+func (ctx *Context) GetSize(size int, sizeExpr *CelEvaluator) (int, error) {
+	if sizeExpr != nil {
+		val, err := sizeExpr.Execute(ctx)
+		if err != nil {
+			return 0, errors.WithStack(err)
+		}
+		switch v := val.(type) {
+		case int64:
+			size = int(v)
+		case uint64:
+			size = int(v)
+		case float32:
+			size = int(math.Round(float64(v)))
+		case float64:
+			size = int(math.Round(v))
+		default:
+			return 0, errors.Errorf("size expr return invalid type: %T", val)
+		}
+	}
+	//if size < 0 {
+	//	return 0, errors.Errorf("negative size: %d", size)
+	//}
+	return size, nil
+}
+
 func (c *Context) ReadBits(n int) (uint64, error) {
 	if n > 64 {
 		return 0, errors.New("cannot read more than 64 bits")
@@ -195,42 +230,99 @@ func (w *Context) WriteInt(value uint64, size int, byteOrder binary.ByteOrder) e
 	// 写入最后 numBytes 个字节
 	switch byteOrder {
 	case binary.BigEndian:
-		w.Writer.Write(buf[8-size:])
+		return w.WriteBytes(buf[8-size:])
 	case binary.LittleEndian:
-		w.Writer.Write(buf[:size])
+		return w.WriteBytes(buf[:size])
 	}
 	return nil
 }
 
 func (w *Context) WriteFloat(value float64, size int, byteOrder binary.ByteOrder) error {
-	writer := bytes.Buffer{}
-	err := binary.Write(&writer, byteOrder, value)
+	buf := bytes.Buffer{}
+	err := binary.Write(&buf, byteOrder, value)
 	if err != nil {
 		return errors.WithStack(err)
 	}
 	switch byteOrder {
 	case binary.BigEndian:
-		w.Writer.Write(writer.Bytes()[8-size:])
+		return w.WriteBytes(buf.Bytes()[8-size:])
 	case binary.LittleEndian:
-		w.Writer.Write(writer.Bytes()[:size])
+		return w.WriteBytes(buf.Bytes()[:size])
 	}
 	return nil
 }
 
 // WriteBytes 写入完整的字节
 func (w *Context) WriteBytes(data []byte) error {
-	_, err := w.Writer.Write(data)
-	return err
-}
-
-func (w *Context) WriteAt(data []byte, offset int) error {
-	if offset < 0 || offset+len(data) > w.Writer.Len() {
-		return fmt.Errorf("invalid set offset or length")
+	if w.Round == 0 {
+		_, err := w.Writer.Write(data)
+		return err
 	}
-	copy(w.Writer.Bytes()[offset:offset+len(data)], data)
+
+	idx := w.NodeIndex - 1
+
+	if idx >= len(w.NodeOffsets) {
+		return errors.New("node index out of range")
+	}
+	offset := w.NodeOffsets[idx]
+	copy(w.Data[offset:], data)
 	return nil
 }
 
 func (w *Context) WritePlaceholder(size int) error {
 	return w.WriteBytes(bytes.Repeat([]byte{0}, size))
+}
+
+func (w *Context) Write(typ string, val any, size int, encodable Encodable) error {
+	switch typ {
+	case "", NodeTypeHex:
+		return w.writeHex(val, size, encodable.GetPadByte(), encodable.GetPadPosition())
+	case NodeTypeString:
+		return w.writeString(val, size, encodable.GetPadByte(), encodable.GetPadPosition())
+	case NodeTypeInt:
+		return w.writeUint(val, size, encodable.GetByteOrder())
+	case NodeTypeUint:
+		return w.writeUint(val, size, encodable.GetByteOrder())
+	case NodeTypeFloat:
+		return w.writeFloat(val, size, encodable.GetByteOrder())
+	}
+	return nil
+}
+
+func (ctx *Context) writeHex(val any, size int, padByte byte, padPosition string) error {
+	str, ok := val.(string)
+	if !ok {
+		return errors.Errorf("value should be a string, '%v'", val)
+	}
+
+	bs, err := hex.DecodeString(str)
+	if err != nil {
+		return errors.Errorf("value should be a valid hex string, '%s'", str)
+	}
+
+	return ctx.WriteBytes(utils.ResizeBytes(bs, size, padByte, padPosition))
+}
+
+func (ctx *Context) writeString(val any, size int, padByte byte, padPosition string) error {
+	str, ok := val.(string)
+	if !ok {
+		return errors.Errorf("value should be a string, '%v'", val)
+	}
+	return ctx.WriteBytes(utils.ResizeBytes([]byte(str), size, padByte, padPosition))
+}
+
+func (ctx *Context) writeUint(val any, size int, byteOrder binary.ByteOrder) error {
+	i, ok := utils.ToUint64(val)
+	if !ok {
+		return errors.Errorf("value should be a int, '%v'", val)
+	}
+	return ctx.WriteInt(i, size, byteOrder)
+}
+
+func (ctx *Context) writeFloat(val any, size int, byteOrder binary.ByteOrder) error {
+	f, ok := utils.ToFloat64(val)
+	if !ok {
+		return errors.Errorf("value should be a float, '%v'", val)
+	}
+	return ctx.WriteFloat(f, size, byteOrder)
 }

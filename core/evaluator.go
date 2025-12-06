@@ -9,9 +9,10 @@ type CelEvaluator struct{ prg cel.Program }
 
 func CompileExpression(expr string) (*CelEvaluator, error) {
 	env, err := cel.NewEnv(
-		cel.Variable("vars", cel.MapType(cel.StringType, cel.DynType)),   // vars为以前的变量
-		cel.Variable("fields", cel.MapType(cel.StringType, cel.DynType)), // fields为当前字段的所有值
-		cel.Variable("val", cel.DynType),                                 // val为当前字段的值
+		cel.Variable("vars", cel.MapType(cel.StringType, cel.DynType)),    // vars为以前的变量
+		cel.Variable("fields", cel.MapType(cel.StringType, cel.DynType)),  // fields为当前字段的所有值
+		cel.Variable("offsets", cel.MapType(cel.StringType, cel.DynType)), // fields为当前字段的所有值
+		cel.Variable("val", cel.DynType),                                  // val为当前字段的值
 	)
 	if err != nil {
 		return nil, errors.WithStack(err)
@@ -43,8 +44,9 @@ func CompileExpression(expr string) (*CelEvaluator, error) {
 
 func (e *CelEvaluator) Execute(ctx *Context) (any, error) {
 	input := map[string]any{
-		"vars":   ctx.Vars,
-		"fields": ctx.Fields,
+		"vars":    ctx.Vars,
+		"fields":  ctx.Fields,
+		"offsets": ctx.Offsets,
 	}
 	out, _, err := e.prg.Eval(input)
 	if err != nil {

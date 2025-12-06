@@ -2,13 +2,13 @@ package core
 
 import (
 	"bytes"
+	"encoding/json"
 	"github.com/vuuvv/errors"
 	"github.com/vuuvv/vpacket/utils"
 	"gopkg.in/yaml.v3"
 	"io"
 	"os"
 	"time"
-	"vuuvv.cn/unisoftcn/orca/serialize"
 )
 
 type ScanResult struct {
@@ -104,7 +104,8 @@ func (this *Codec) Encode(input map[string]any) ([]byte, error) {
 }
 
 func (this *Codec) EncodeFromJson(input string) ([]byte, error) {
-	data, err := serialize.JsonParsePrimitive[map[string]any](input)
+	data := make(map[string]any)
+	err := json.Unmarshal([]byte(input), &data)
 	if err != nil {
 		return nil, err
 	}

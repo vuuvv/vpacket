@@ -6,15 +6,15 @@ import (
 )
 
 type SwitchNode struct {
+	core.BaseNode
 	FieldName   string
 	Cases       map[any][]core.Node
 	DefaultCase []core.Node
-	Flow        string
 }
 
 func (n *SwitchNode) Compile(yf *core.YamlField, structures core.DataStructures) error {
+	_ = n.BaseNode.Compile(yf, structures)
 	n.FieldName = yf.Field
-	n.Flow = yf.Flow
 	n.Cases = make(map[any][]core.Node)
 
 	// 编译所有 Cases (混合模式)
@@ -71,12 +71,12 @@ func (n *SwitchNode) Compile(yf *core.YamlField, structures core.DataStructures)
 }
 
 func (this *SwitchNode) GetName() string {
+	if this.Name != "" {
+		return this.Name
+	}
 	return "switch"
 }
 
-func (this *SwitchNode) GetFlow() string {
-	return this.Flow
-}
 func (n *SwitchNode) Decode(ctx *core.Context) error {
 	nodes, err := n.getNodesToExecute(ctx)
 	if err != nil {

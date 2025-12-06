@@ -3,11 +3,23 @@ package utils
 import (
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	"github.com/vuuvv/errors"
 	"golang.org/x/exp/constraints"
 	"strconv"
 	"strings"
 )
+
+func Bytes2Hex(bytes []byte) string {
+	buf := strings.Builder{}
+	for _, b := range bytes {
+		buf.WriteString(fmt.Sprintf(" %02x", b))
+	}
+	if buf.Len() > 0 {
+		return buf.String()[1:]
+	}
+	return ""
+}
 
 func Uint64ToBytes[T constraints.Integer](u T, size int, order binary.ByteOrder) []byte {
 	data := make([]byte, 8)
@@ -30,7 +42,7 @@ func ParseTValue(inputString string, size int, byteOrder binary.ByteOrder) ([]by
 	// 检查是否符合 T'xxx' 格式：长度大于等于 4，第二个字符是 '，最后一个字符是 '
 	if len(inputString) >= 4 && inputString[1] == '\'' && inputString[len(inputString)-1] == '\'' {
 		// 符合 T'xxx' 格式
-		typeID = strings.ToLower(string(inputString[0]))
+		typeID = string(inputString[0])
 		dataStr = inputString[2 : len(inputString)-1]
 	} else {
 		// 不符合 T'xxx' 格式，使用默认规则：h'xxx'
@@ -90,6 +102,7 @@ func ParseTValue(inputString string, size int, byteOrder binary.ByteOrder) ([]by
 			return value, nil
 		}
 		value = ResizeBytes(value, size, 0, PaddingRight)
+	case "e": // 计算eval
 
 	default:
 		// 如果是 T'xxx' 格式但 T 是未知类型

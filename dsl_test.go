@@ -21,15 +21,13 @@ func setupTestScanner(file ...string) *core.Codec {
 	// 1. 加载协议配置
 	yamlBytes, err := os.ReadFile(filePath)
 	if err != nil {
+		fmt.Printf("%+v\n", err)
 		panic(err)
-		//fmt.Printf("%+v\n", err)
-		//return nil
 	}
 	scanner, err := NewCodecFromBytes(yamlBytes)
 	if err != nil {
+		fmt.Printf("%+v\n", err)
 		panic(err)
-		//fmt.Printf("%+v\n", err)
-		//return nil
 	}
 	return scanner
 }
@@ -66,17 +64,20 @@ func TestDsl(t *testing.T) {
 		return
 	}
 
+	//	text := `
+	//{
+	//  "board_id": "BB8CABCD239EBC45E339E339",
+	//  "command": "C3",
+	//  "data": {
+	//    "card_no": "05242",
+	//    "channel": 1,
+	//    "idLen": 5
+	//  },
+	//  "dataCrc": 3595
+	//}
+	//`
 	text := `
-{
-  "board_id": "BB8CABCD239EBC45E339E339",
-  "command": "C3",
-  "data": {
-    "card_no": "05242",
-    "channel": 1,
-    "idLen": 5
-  },
-  "dataCrc": 3595
-}
+{"command":"04","sn":"BB8CABCD239EBC45E339E339","timestamp":"1764998575"}
 `
 	bs, err := scanner.EncodeFromJson(text)
 

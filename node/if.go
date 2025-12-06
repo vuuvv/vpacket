@@ -6,12 +6,13 @@ import (
 )
 
 type IfNode struct {
+	core.BaseNode
 	Condition *core.CelEvaluator
 	Then      []core.Node
-	Flow      string
 }
 
 func (n *IfNode) Compile(yf *core.YamlField, structures core.DataStructures) error {
+	_ = n.BaseNode.Compile(yf, structures)
 	cond, err := core.CompileExpression(yf.Condition)
 	if err != nil {
 		return errors.WithStack(err)
@@ -22,16 +23,14 @@ func (n *IfNode) Compile(yf *core.YamlField, structures core.DataStructures) err
 	}
 	n.Condition = cond
 	n.Then = thenNodes
-	n.Flow = yf.Flow
 	return nil
 }
 
 func (this *IfNode) GetName() string {
+	if this.Name != "" {
+		return this.Name
+	}
 	return "if"
-}
-
-func (this *IfNode) GetFlow() string {
-	return this.Flow
 }
 
 func (n *IfNode) Decode(ctx *core.Context) error {

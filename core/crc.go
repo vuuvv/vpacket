@@ -2,8 +2,8 @@ package core
 
 import (
 	"github.com/vuuvv/errors"
+	"github.com/vuuvv/vpacket/crc16"
 	"strings"
-	"vuuvv.cn/unisoftcn/orca/utils/crc16"
 )
 
 const (

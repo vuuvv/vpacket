@@ -40,7 +40,7 @@ protocols:
         check: "fields.magic == '7273'"
 
       - name: "direction"
-        default: 'BB'
+        default: 'AA'
         size: 1
 
       - name: "sn"
@@ -58,17 +58,28 @@ protocols:
         size: 1
 
       - name: "dataLen"
+        flow: "decode"
         type: "int"
         size: 2
+
+      - name: "dataLen"
+        flow: "encode"
+        type: "calc"
+        size: 2
+        formula: "int(vars.packetLen) - int(offsets.dataStart)"
+        round: 1
 
       - name: "dataCrc"
         crc: "crc16_modbus"
         crc_start: 24
         crc_end: "vars.packetLen"
         size: 2
+        round: 1 # 表明到第二次编码过程中进行计算
 
       - type: "switch"
+        name: "dataStart"
         field: "command"
+        track_offset: true
         cases:
           - value: "02"
             fields:
@@ -76,6 +87,22 @@ protocols:
                 type: "uint"
                 size: 1
               - name: "data.value"
+                type: "uint"
+                size: 1
+          - value: "04" # 设置时间戳
+            fields:
+              - name: "timestamp"
+                flow: "encode"
+                type: "uint"
+                size: 4
+              - name: "data.success"
+                flow: "decode"
+                type: "uint"
+                size: 1
+          - value: "C1" # 设备上报ID
+            fields:
+              - name: "data.success"
+                flow: "decode" # 设备响应
                 type: "uint"
                 size: 1
           - value: "C3" # 刷卡信息上报

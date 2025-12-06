@@ -1,6 +1,7 @@
 package core
 
 import (
+	"encoding/binary"
 	"github.com/vuuvv/errors"
 	"github.com/vuuvv/vpacket/utils"
 )
@@ -24,7 +25,85 @@ type Node interface {
 	Encode(ctx *Context) error
 	GetName() string
 	GetFlow() string
+	GetRound() int
+	IsTrackOffset() bool
 	Compile(fields *YamlField, structures DataStructures) error
+}
+
+type BaseNode struct {
+	Name        string
+	Flow        string // 流程，编码或解码
+	Round       int    // 第几轮进行计算,用于编码流程
+	TrackOffset bool   // 是否跟踪偏移量, 用于回填
+}
+
+func (b *BaseNode) Decode(ctx *Context) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (b *BaseNode) Encode(ctx *Context) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (b *BaseNode) GetName() string {
+	return b.Name
+}
+
+func (b *BaseNode) GetFlow() string {
+	return b.Flow
+}
+
+func (b *BaseNode) GetRound() int {
+	return b.Round
+}
+
+func (b *BaseNode) IsTrackOffset() bool {
+	return b.TrackOffset
+}
+
+func (b *BaseNode) Compile(yf *YamlField, structures DataStructures) error {
+	b.Name = yf.Name
+	b.Flow = yf.Flow
+	b.Round = yf.Round
+	b.TrackOffset = yf.TrackOffset
+	return nil
+}
+
+type Encodable interface {
+	GetByteOrder() binary.ByteOrder
+	GetPadByte() byte
+	GetPadPosition() string
+}
+
+type BaseEncodable struct {
+	ByteOrder   binary.ByteOrder
+	PadByte     byte
+	PadPosition string
+}
+
+func (b *BaseEncodable) GetByteOrder() binary.ByteOrder {
+	return b.ByteOrder
+}
+
+func (b *BaseEncodable) GetPadByte() byte {
+	return b.PadByte
+}
+
+func (b *BaseEncodable) GetPadPosition() string {
+	return b.PadPosition
+}
+
+func (b *BaseEncodable) Compile(yf *YamlField, structures DataStructures) (err error) {
+	b.ByteOrder = utils.GetByteOrder(yf.Endian)
+	bs, err := utils.ParseTValue(yf.PadByte, 1, b.ByteOrder)
+	if err != nil {
+		return err
+	}
+	b.PadByte = bs[0]
+	b.PadPosition = yf.PadPosition
+	return nil
 }
 
 var nodeCompilers = make(map[string]NodeCompileFunc)
@@ -76,6 +155,16 @@ func NodeEncode(ctx *Context, nodes ...Node) error {
 	for _, node := range nodes {
 		if !ctx.MatchFlow(node) {
 			continue
+		}
+		ctx.NodeIndex++
+
+		if ctx.Round == 0 {
+			// 父节点和节点可能会重复
+			pos := ctx.Writer.Len()
+			ctx.NodeOffsets = append(ctx.NodeOffsets, pos)
+			if node.IsTrackOffset() {
+				ctx.Offsets[node.GetName()] = pos
+			}
 		}
 		if err := node.Encode(ctx); err != nil {
 			return errors.Wrapf(err, "Encode field %s failure: %s", node.GetName(), err.Error())

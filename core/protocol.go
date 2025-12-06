@@ -12,6 +12,7 @@ type Protocol struct {
 	Fields            []*YamlField `yaml:"fields"`
 	ParsedFramingRule FramingRule
 	ParsedFields      []Node
+	Round             int
 }
 
 // Setup 获取分包规则
@@ -31,6 +32,12 @@ func (p *Protocol) Setup(structures DataStructures) error {
 	}
 
 	p.ParsedFields = fields
+	for _, field := range fields {
+		r := field.GetRound()
+		if r > p.Round {
+			p.Round = r
+		}
+	}
 	return nil
 }
 
@@ -43,6 +50,18 @@ func (p *Protocol) Decode(packet []byte) (any, error) {
 }
 
 func (p *Protocol) Encode(ctx *Context) ([]byte, error) {
-	err := NodeEncode(ctx, p.ParsedFields...)
-	return ctx.Writer.Bytes(), err
+	for i := 0; i <= p.Round; i++ {
+		ctx.NodeIndex = 0
+		ctx.Round = i
+		err := NodeEncode(ctx, p.ParsedFields...)
+		if i == 0 {
+			bs := ctx.Writer.Bytes()
+			ctx.Vars["packetLen"] = len(bs)
+			ctx.Data = bs
+		}
+		if err != nil {
+			return ctx.Data, errors.WithStack(err)
+		}
+	}
+	return ctx.Data, nil
 }

@@ -2,15 +2,14 @@ package tcp
 
 import (
 	"context"
-	"fmt"
 	"github.com/vuuvv/errors"
 	"github.com/vuuvv/vpacket/core"
+	"github.com/vuuvv/vpacket/log"
 	"github.com/vuuvv/vpacket/utils"
 	"go.uber.org/zap"
 	"net"
 	"sync"
 	"time"
-	"vuuvv.cn/unisoftcn/orca/log"
 )
 
 type DeviceConnection struct {
@@ -49,9 +48,9 @@ func (this *DeviceConnection) SetKey(key string) {
 	this.key = key
 }
 
-func (this *DeviceConnection) DeviceKey(sn string) string {
-	return fmt.Sprintf("%s@%s", sn, this.RemoteAddr())
-}
+//func (this *DeviceConnection) DeviceKey(sn string) string {
+//	return fmt.Sprintf("%s@%s", sn, this.key)
+//}
 
 func (this *DeviceConnection) RemoteAddr() string {
 	return this.conn.RemoteAddr().String()
@@ -60,6 +59,7 @@ func (this *DeviceConnection) RemoteAddr() string {
 func (this *DeviceConnection) Write(data []byte) (int, error) {
 	this.mu.Lock()
 	defer this.mu.Unlock()
+	log.Info("发送报文", this.zapFields(zap.String("data", utils.Bytes2Hex(data)))...)
 	return this.conn.Write(data)
 }
 
@@ -82,7 +82,22 @@ func (this *DeviceConnection) Scan(protocol *core.Scheme) error {
 	return core.NewCodec().Config(protocol).Stream(this.conn).Scan(this.Handle)
 }
 
+func (this *DeviceConnection) Encode(data map[string]any) ([]byte, error) {
+	return core.NewCodec().Config(this.server.scheme).Encode(data)
+}
+
+func (this *DeviceConnection) SendCommand(cmd map[string]any) error {
+	bs, err := this.Encode(cmd)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	_, err = this.Write(bs)
+	return err
+}
+
 func (this *DeviceConnection) Handle(result *core.ScanResult) error {
+	log.Info("接收报文", this.zapFields(zap.String("data", utils.Bytes2Hex(result.Packet)))...)
+
 	/// 检查是否是连接设备
 	this.setupDeviceSn(result)
 	this.UpdateActiveTime()
@@ -102,7 +117,7 @@ func (this *DeviceConnection) setupDeviceSn(result *core.ScanResult) {
 	}
 	this.sn = sn
 	this.deviceType = deviceType
-	this.server.AddDevice(sn, this)
+	this.server.AddDevice(this, sn)
 }
 
 func (this *DeviceConnection) getConnectionDevice(result *core.ScanResult) (string, string) {
@@ -165,7 +180,32 @@ func (this *DeviceConnection) Heartbeat(duration int, discoveryFunc DeviceDiscov
 		log.Warn(errors.Wrapf(err, "查询子设备失败: %s, %s", this.sn, err.Error()), this.zapFields()...)
 		return
 	}
+	onlyOld, onlyNew, _ := utils.DifferenceBy(this.subDevices, subDevices, func(item string) string { return item })
+
+	this.server.RemoveDeviceSn(this, onlyOld...)
+	this.server.AddDevice(this, onlyNew...)
 	this.subDevices = subDevices
+
+	for _, sn := range subDevices {
+		heartbeatCommand := map[string]any{}
+		for k, v := range command {
+			heartbeatCommand[k] = v
+		}
+		if _, ok := heartbeatCommand["sn"]; !ok {
+			heartbeatCommand["sn"] = sn
+		}
+
+		data, err := this.Encode(heartbeatCommand)
+		if err != nil {
+			log.Warn(errors.Wrapf(err, "编码子设备心跳命令失败: %s, %s", sn, err.Error()), this.zapFields()...)
+			continue
+		}
+		_, err = this.Write(data)
+		if err != nil {
+			log.Warn(errors.Wrapf(err, "发送子设备心跳命令失败: %s, %s", sn, err.Error()), this.zapFields()...)
+			continue
+		}
+	}
 
 	this.heartbeatTime = time.Now()
 }

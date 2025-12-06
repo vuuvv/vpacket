@@ -10,18 +10,21 @@ type YamlSwitchCase struct {
 }
 
 type YamlField struct {
-	Name      string       `yaml:"name"`
-	Flow      string       `yaml:"flow"` // 流程类型, 为空表示所有流程都包括, 其它的有 "encode", "decode"
-	Bits      int          `yaml:"bits"`
-	Type      string       `yaml:"type"`
-	Size      int          `yaml:"size"`
-	SizeExpr  string       `yaml:"size_expr"`
-	Default   yaml.Node    `yaml:"default"` // 默认值
-	Endian    string       `yaml:"endian"`  // 字节序, big: 大端, little: 小端, 默认大端
-	Check     string       `yaml:"check"`
-	Condition string       `yaml:"condition"`
-	Formula   string       `yaml:"formula"`
-	Then      []*YamlField `yaml:"then"`
+	Name        string       `yaml:"name"`
+	Flow        string       `yaml:"flow"` // 流程类型, 为空表示所有流程都包括, 其它的有 "encode", "decode"
+	Round       int          `yaml:"round"`
+	Bits        int          `yaml:"bits"`
+	Type        string       `yaml:"type"`
+	Size        int          `yaml:"size"`
+	SizeExpr    string       `yaml:"size_expr"`
+	Default     yaml.Node    `yaml:"default"` // 默认值
+	Endian      string       `yaml:"endian"`  // 字节序, big: 大端, little: 小端, 默认大端
+	PadByte     string       `yaml:"pad_byte"`
+	PadPosition string       `yaml:"pad_position"`
+	Check       string       `yaml:"check"`
+	Condition   string       `yaml:"condition"`
+	Formula     string       `yaml:"formula"`
+	Then        []*YamlField `yaml:"then"`
 
 	// Switch 相关的字段
 	Field         string            `yaml:"field"`
@@ -34,6 +37,5 @@ type YamlField struct {
 	CrcStart string `yaml:"crc_start"` // 起始偏移 CEL 表达式
 	CrcEnd   string `yaml:"crc_end"`
 
-	// 声明是否回填
-	EncodeLater string `yaml:"encode_later"` // 在哪个字段编码完成后进行回填
+	TrackOffset bool `yaml:"track_offset"` // 跟踪偏移量, 用于回填
 }
