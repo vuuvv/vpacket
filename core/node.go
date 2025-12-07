@@ -151,6 +151,25 @@ func NodeCompile(fields []*YamlField, structures DataStructures) ([]Node, error)
 	return nodes, nil
 }
 
+func NodeCompileWithRef(ref string, fields []*YamlField, structures DataStructures, required bool) ([]Node, error) {
+	definition := fields
+
+	if ref != "" { // 外部引用优先
+		var ok bool
+		structure, ok := structures[ref]
+		if !ok {
+			return nil, errors.Errorf("ref '%s' not found", ref)
+		}
+		definition = structure.Fields
+	}
+
+	if required && len(definition) == 0 {
+		return nil, errors.Errorf("requires either 'ref' or 'fields'")
+	}
+
+	return NodeCompile(definition, structures)
+}
+
 func NodeEncode(ctx *Context, nodes ...Node) error {
 	for _, node := range nodes {
 		if !ctx.MatchFlow(node) {

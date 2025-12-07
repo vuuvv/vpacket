@@ -4,14 +4,16 @@
 data_structures:
 
   # 指令 0x01: 上报状态 (可复用结构)
-  Cmd_01_Payload:
+  ResponseCode:
     fields:
-      - name: "param_a"
-        bits: 8
-      - name: "temp_c"
-        bits: 16
-      - name: "is_valid"
-        bits: 8
+      - name: "data.code"
+        flow: "decode"
+        type: "uint"
+        size: 1
+      - name: "data.success"
+        flow: "decode"
+        type: "calc"
+        formula: "fields.data.code==0"
 
   # 默认结构：用于无法识别的指令 (可复用结构)
   Unknown_Payload:
@@ -81,7 +83,7 @@ protocols:
         field: "command"
         track_offset: true
         cases:
-          - value: "02"
+          - value: "02" # 输出IO
             fields:
               - name: "data.port"
                 type: "uint"
@@ -91,14 +93,25 @@ protocols:
                 size: 1
           - value: "04" # 设置时间戳
             fields:
-              - name: "timestamp"
+              - name: "data.timestamp"
                 flow: "encode"
                 type: "uint"
                 size: 4
-              - name: "data.success"
+              - name: "data.response.code"
+                type: "struct"
                 flow: "decode"
+                ref: "ResponseCode"
+          - value: "0D" # 设置LED显示方向
+            fields:
+              - name: "data.direction"
+                flow: "encode"
                 type: "uint"
                 size: 1
+              - name: "data.response.code"
+                type: "struct"
+                flow: "decode"
+                ref: "ResponseCode"
+
           - value: "C1" # 设备上报ID
             fields:
               - name: "data.success"

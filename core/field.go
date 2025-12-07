@@ -1,12 +1,22 @@
 package core
 
-import "gopkg.in/yaml.v3"
+import (
+	"gopkg.in/yaml.v3"
+)
 
-type YamlSwitchCase struct {
-	Value  any          `yaml:"value"`
-	Action string       `yaml:"action"`
+type YamlStructDef struct {
 	Ref    string       `yaml:"ref"`    // 外部引用
 	Fields []*YamlField `yaml:"fields"` // 内联定义
+}
+
+func (this *YamlStructDef) Compile(structures DataStructures, required bool) (nodes []Node, err error) {
+	return NodeCompileWithRef(this.Ref, this.Fields, structures, required)
+}
+
+type YamlSwitchCase struct {
+	Ref    string       `yaml:"ref"`    // 外部引用
+	Fields []*YamlField `yaml:"fields"` // 内联定义
+	Value  any          `yaml:"value"`
 }
 
 type YamlField struct {
@@ -36,6 +46,12 @@ type YamlField struct {
 	Crc      string `yaml:"crc"`       // 标记为 CRC 字段
 	CrcStart string `yaml:"crc_start"` // 起始偏移 CEL 表达式
 	CrcEnd   string `yaml:"crc_end"`
+
+	// struct
+	Ref string `yaml:"ref"` // 结构定义
+
+	// array
+	Item *YamlStructDef `yaml:"item"` // 数组元素定义
 
 	TrackOffset bool `yaml:"track_offset"` // 跟踪偏移量, 用于回填
 }

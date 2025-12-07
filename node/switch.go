@@ -12,31 +12,16 @@ type SwitchNode struct {
 	DefaultCase []core.Node
 }
 
-func (n *SwitchNode) Compile(yf *core.YamlField, structures core.DataStructures) error {
+func (n *SwitchNode) Compile(yf *core.YamlField, structures core.DataStructures) (err error) {
 	_ = n.BaseNode.Compile(yf, structures)
 	n.FieldName = yf.Field
 	n.Cases = make(map[any][]core.Node)
 
 	// 编译所有 Cases (混合模式)
 	for _, c := range yf.Cases {
-		var definition []*core.YamlField
-
-		if c.Ref != "" { // 外部引用优先
-			var ok bool
-			structure, ok := structures[c.Ref]
-			if !ok {
-				return errors.Errorf("switch case ref '%s' not found", c.Ref)
-			}
-			definition = structure.Fields
-		} else if len(c.Fields) > 0 { // 内联定义
-			definition = c.Fields
-		} else {
-			return errors.Errorf("switch case for value %v requires either 'ref' or 'fields'", c.Value)
-		}
-
-		compiledNodes, err := core.NodeCompile(definition, structures)
+		nodes, err := core.NodeCompileWithRef(c.Ref, c.Fields, structures, true)
 		if err != nil {
-			return errors.WithStack(err)
+			return errors.Wrapf(err, "switch case for value %v compile failure: %s", c.Value, err.Error())
 		}
 
 		var caseKey any
@@ -46,25 +31,15 @@ func (n *SwitchNode) Compile(yf *core.YamlField, structures core.DataStructures)
 			caseKey = c.Value
 		}
 
-		n.Cases[caseKey] = compiledNodes
+		n.Cases[caseKey] = nodes
 	}
 
 	// 编译 Default Case (混合模式)
 	if yf.DefaultRef != "" || len(yf.DefaultFields) > 0 {
-		var defaultDefinition []*core.YamlField
-
-		if yf.DefaultRef != "" { // 默认外部引用优先
-			var ok bool
-			structure, ok := structures[yf.DefaultRef]
-			if !ok {
-				return errors.Errorf("switch default ref '%s' not found", yf.DefaultRef)
-			}
-			defaultDefinition = structure.Fields
-		} else if len(yf.DefaultFields) > 0 { // 默认内联定义
-			defaultDefinition = yf.DefaultFields
+		n.DefaultCase, err = core.NodeCompileWithRef(yf.DefaultRef, yf.DefaultFields, structures, false)
+		if err != nil {
+			return errors.Wrapf(err, "switch node '%s' default case compile failure: %s", n.Name, err.Error())
 		}
-
-		n.DefaultCase, _ = core.NodeCompile(defaultDefinition, structures)
 	}
 
 	return nil

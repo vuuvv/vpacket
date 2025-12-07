@@ -5,4 +5,6 @@ func Register() {
 	registerIf()
 	registerCalc()
 	registerSwitch()
+	registerStruct()
+	registerArray()
 }

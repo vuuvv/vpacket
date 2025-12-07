@@ -9,6 +9,7 @@ import (
 	"github.com/vuuvv/vpacket/core"
 	"log"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -173,6 +174,32 @@ func TestEncodeFE(t *testing.T) {
 func TestDecodeFE(t *testing.T) {
 	scanner := setupTestScanner()
 	bs, err := hex.DecodeString("7273bbbb8cabcd239ebc45e339e33900000000fe000140BF00")
+	if err != nil {
+		fmt.Printf("%+v\n", err)
+		return
+	}
+	mockStream := new(bytes.Buffer)
+	mockStream.Write(bs)
+
+	err = scanner.Stream(mockStream).Scan(func(result *ScanResult) error {
+		printJson(result.Data)
+		if result.HandleError != nil {
+			fmt.Println(result.HandleError)
+		}
+		if result.ScanError != nil {
+			fmt.Println(result.ScanError)
+		}
+		return nil
+	})
+	if err != nil {
+		fmt.Printf("%+v\n", err)
+		return
+	}
+}
+
+func TestDecodeSetTime(t *testing.T) {
+	scanner := setupTestScanner()
+	bs, err := hex.DecodeString(strings.ReplaceAll("72 73 bb bb 8c ab cd 23 9e bc 45 e3 39 e3 39 00 00 00 00 04 00 01 40 bf 00", " ", ""))
 	if err != nil {
 		fmt.Printf("%+v\n", err)
 		return
