@@ -41,7 +41,7 @@ func NewCodecFromBytes(configBytes []byte) (*Codec, error) {
 	scanner := NewCodec()
 	err := yaml.Unmarshal(configBytes, &scanner.scheme)
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 	err = scanner.scheme.Setup()
 	return scanner, err

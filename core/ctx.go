@@ -27,6 +27,9 @@ type Context struct {
 	Round       int            // 编码的第几轮
 	NodeOffsets []int          // 正在处理的node的索引, 每个node有一个起始位置
 	NodeIndex   int
+	ArrayStack  [][]any // 当前元素所在的数组
+	ArrayDeep   int     // 是否在数组中
+	Array       []any   // 当前的Array
 }
 
 func NewContext(data []byte) *Context {
@@ -36,6 +39,10 @@ func NewContext(data []byte) *Context {
 		Fields:  make(map[string]any),
 		Offsets: make(map[string]int),
 	}
+}
+
+func (c *Context) InArray() bool {
+	return len(c.ArrayStack) > 0
 }
 
 // SetField 将 value 嵌套地放入 dict 中。

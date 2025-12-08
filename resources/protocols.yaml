@@ -83,12 +83,35 @@ protocols:
         field: "command"
         track_offset: true
         cases:
+          - value: "01" # 读取IO状态
+            fields:
+              - name: "data.response.code"
+                type: "struct"
+                flow: "decode"
+                ref: "ResponseCode"
+              - name: "data.ioState"
+                type: "array"
+                flow: "decode"
+                size_expr: "(int(fields.dataLen) - 1) / 2"
+                fields:
+                  - name: "data.ioState.port"
+                    type: "uint"
+                    size: 1
+                  - name: "data.ioState.value"
+                    type: "uint"
+                    size: 1
           - value: "02" # 输出IO
             fields:
+              - name: "data.response.code"
+                type: "struct"
+                flow: "decode"
+                ref: "ResponseCode"
               - name: "data.port"
+                flow: "encode"
                 type: "uint"
                 size: 1
               - name: "data.value"
+                flow: "encode"
                 type: "uint"
                 size: 1
           - value: "04" # 设置时间戳
@@ -97,6 +120,16 @@ protocols:
                 flow: "encode"
                 type: "uint"
                 size: 4
+              - name: "data.response.code"
+                type: "struct"
+                flow: "decode"
+                ref: "ResponseCode"
+          - value: "05" # 设置时间戳
+            fields:
+              - name: "data.index"
+                flow: "encode"
+                type: "uint"
+                size: 1
               - name: "data.response.code"
                 type: "struct"
                 flow: "decode"
@@ -111,6 +144,52 @@ protocols:
                 type: "struct"
                 flow: "decode"
                 ref: "ResponseCode"
+          - value: "0E" # 设置LED显示方向
+            fields:
+              - name: "data.duration"
+                flow: "encode"
+                type: "uint"
+                size: 1
+              - name: "data.line1Length"
+                flow: "encode"
+                type: "uint"
+                size: 1
+              - name: "data.line1Speed"
+                flow: "encode"
+                type: "uint"
+                size: 2
+              - name: "data.line2Length"
+                flow: "encode"
+                type: "uint"
+                size: 1
+              - name: "data.line2Speed"
+                flow: "encode"
+                type: "uint"
+                size: 2
+              - name: "data.line3Length"
+                flow: "encode"
+                type: "uint"
+                size: 1
+              - name: "data.line3Speed"
+                flow: "encode"
+                type: "uint"
+                size: 2
+              - name: "data.line4Length"
+                flow: "encode"
+                type: "uint"
+                size: 1
+              - name: "data.line4Speed"
+                flow: "encode"
+                type: "uint"
+                size: 2
+              - name: "data.content"
+                flow: "encode"
+                type: "hex"
+                size: -1
+              - name: "data.response.code"
+                type: "struct"
+                flow: "decode"
+                ref: "ResponseCode"
 
           - value: "C1" # 设备上报ID
             fields:
@@ -118,6 +197,19 @@ protocols:
                 flow: "decode" # 设备响应
                 type: "uint"
                 size: 1
+          - value: "C2" # 设备上报IO状态,IO触发
+            fields:
+              - name: "data.ioState"
+                type: "array"
+                flow: "decode"
+                size_expr: "int(fields.dataLen) / 2"
+                fields:
+                  - name: "data.ioState.port"
+                    type: "uint"
+                    size: 1
+                  - name: "data.ioState.value"
+                    type: "uint"
+                    size: 1
           - value: "C3" # 刷卡信息上报
             flow: "decode" # 只用于解码流程
             fields:

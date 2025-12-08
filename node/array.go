@@ -24,9 +24,7 @@ func (n *ArrayNode) Compile(yf *core.YamlField, structures core.DataStructures) 
 		n.SizeExpr = expr
 	}
 
-	item := yf.Item
-
-	n.Item, err = core.NodeCompileWithRef(item.Ref, item.Fields, structures, true)
+	n.Item, err = core.NodeCompileWithRef(yf.Ref, yf.Fields, structures, true)
 	if err != nil {
 		return errors.Wrapf(err, "compile 'item' failed: %s", err.Error())
 	}
@@ -34,6 +32,16 @@ func (n *ArrayNode) Compile(yf *core.YamlField, structures core.DataStructures) 
 }
 
 func (n *ArrayNode) Decode(ctx *core.Context) error {
+	var val []any
+	//ctx.SetField(n.Name, val)
+	//ctx.ArrayStack = append(ctx.ArrayStack, val)
+	//ctx.Array = val
+	//defer func() {
+	//	ctx.ArrayStack = ctx.ArrayStack[:len(ctx.ArrayStack)-1]
+	//	if len(ctx.ArrayStack) > 0 {
+	//		ctx.Array = ctx.Array[:len(ctx.Array)-1]
+	//	}
+	//}()
 	length, err := ctx.GetSize(n.Size, n.SizeExpr)
 	if err != nil {
 		return errors.WithStack(err)
@@ -43,7 +51,13 @@ func (n *ArrayNode) Decode(ctx *core.Context) error {
 		if err != nil {
 			return errors.WithStack(err)
 		}
+		item, ok := ctx.GetField(n.Name)
+		if ok {
+			val = append(val, item)
+		}
+		ctx.SetField(n.Name, nil)
 	}
+	ctx.SetField(n.Name, val)
 	return nil
 }
 

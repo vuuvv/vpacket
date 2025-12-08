@@ -223,6 +223,32 @@ func TestDecodeSetTime(t *testing.T) {
 	}
 }
 
+func TestDecodeIoState(t *testing.T) {
+	scanner := setupTestScanner()
+	bs, err := hex.DecodeString(strings.ReplaceAll("72 73 bb bb 8c ab cd 23 9e bc 45 e3 39 e3 39 00 00 00 00 01 00 09 42 2d 00 01 01 02 01 a1 01 a2 01", " ", ""))
+	if err != nil {
+		fmt.Printf("%+v\n", err)
+		return
+	}
+	mockStream := new(bytes.Buffer)
+	mockStream.Write(bs)
+
+	err = scanner.Stream(mockStream).Scan(func(result *ScanResult) error {
+		printJson(result.Data)
+		if result.HandleError != nil {
+			fmt.Println(result.HandleError)
+		}
+		if result.ScanError != nil {
+			fmt.Println(result.ScanError)
+		}
+		return nil
+	})
+	if err != nil {
+		fmt.Printf("%+v\n", err)
+		return
+	}
+}
+
 // 辅助函数：构造二进制包 (command: 1-byte, dataLen: 2-byte)
 func writePacket(buf *bytes.Buffer, command uint8, dataLen uint16, payload []byte) {
 	// 1-2: Magic 0x7273

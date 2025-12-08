@@ -186,8 +186,12 @@ func ResizeBytes(data []byte, size int, padByte byte, position string) []byte {
 		position = PaddingRight
 	}
 
-	if size < 0 {
+	if size == 0 {
 		return nil
+	}
+
+	if size < 0 {
+		return data
 	}
 
 	currentLen := len(data)

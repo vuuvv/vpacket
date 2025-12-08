@@ -51,7 +51,10 @@ type YamlField struct {
 	Ref string `yaml:"ref"` // 结构定义
 
 	// array
-	Item *YamlStructDef `yaml:"item"` // 数组元素定义
+	Fields []*YamlField `yaml:"fields"` //
+
+	//// array
+	//Item *YamlStructDef `yaml:"item"` // 数组元素定义
 
 	TrackOffset bool `yaml:"track_offset"` // 跟踪偏移量, 用于回填
 }
