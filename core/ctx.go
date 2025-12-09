@@ -179,6 +179,9 @@ func (ctx *Context) GetSize(size int, sizeExpr *CelEvaluator) (int, error) {
 }
 
 func (c *Context) ReadBits(n int) (uint64, error) {
+	if n == 0 {
+		return 0, nil
+	}
 	if n > 64 {
 		return 0, errors.New("cannot read more than 64 bits")
 	}
@@ -216,6 +219,9 @@ func (c *Context) ReadBits(n int) (uint64, error) {
 }
 
 func (c *Context) ReadBytes(n int) ([]byte, error) {
+	if n == 0 {
+		return nil, nil
+	}
 	if c.BitPos != 0 {
 		return nil, errors.New("read bytes must be aligned")
 	}

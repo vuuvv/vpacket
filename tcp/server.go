@@ -2,7 +2,7 @@ package tcp
 
 import (
 	"context"
-	"fmt"
+	"github.com/samber/lo"
 	"github.com/vuuvv/errors"
 	"github.com/vuuvv/vpacket/core"
 	"github.com/vuuvv/vpacket/log"
@@ -26,10 +26,12 @@ type ServerConfig struct {
 	ReadBufferSize      int                 `json:"readBufferSize"`
 	WriteBufferSize     int                 `json:"writeBufferSize"`
 	MaxConnections      int                 `json:"maxConnections"`
+	HeartbeatTimeout    int                 `json:"heartbeatTimeout"`    // 心跳过期时间,默认是60秒
+	HeartbeatInterval   int                 `json:"HeartbeatInterval"`   // 查询子设备的时间间隔,并向子设备发送心跳,默认是30秒
 	DeviceDiscoveryMode string              `json:"deviceDiscoveryMode"` // 子设备发现模式,默认是通过子设备发送心跳来发现
-	DeviceSyncDuration  int                 `json:"deviceSyncDuration"`  // 查询子设备的时间间隔,并向子设备发送心跳,默认是30秒
 	DeviceDiscoveryFunc DeviceDiscoveryFunc `json:"-"`
 	DeviceDiscoveryCmd  map[string]any      `json:"deviceDiscoveryCmd"`
+	MessageDelayTime    int                 `json:"messageDelayTime"` // 发送和接受到消息后，多少毫秒后才能处理下一条消息,如果为0就代表是全双工模式,可以同时发送和接受
 }
 
 type Server struct {
@@ -145,7 +147,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 	}
 
 	deviceConn := NewDeviceConnection(s, conn)
-	defer s.RemoveConnection(deviceConn)
+	defer s.RemoveConnection(deviceConn, false)
 	err = deviceConn.Scan(s.scheme)
 	if err != nil {
 		log.Warn(errors.Wrap(err, "Scan fail"), deviceConn.zapFields()...)
@@ -157,14 +159,17 @@ func (s *Server) AddConnection(conn *DeviceConnection) {
 	s.connections.Store(conn.key, conn)
 }
 
-func (s *Server) RemoveConnection(conn *DeviceConnection) {
+func (s *Server) RemoveConnection(conn *DeviceConnection, stopManual bool) {
 	s.connections.Delete(conn.key)
 	s.RemoveDevice(conn)
+	if stopManual {
+		conn.Close()
+	}
 }
 
 func (s *Server) AddDevice(conn *DeviceConnection, snList ...string) {
 	for _, sn := range snList {
-		s.devices.Store(sn, conn.key)
+		s.devices.Store(sn, lo.Tuple2[string, time.Time]{A: conn.key, B: time.Now()})
 	}
 }
 
@@ -187,12 +192,46 @@ func (s *Server) RemoveDeviceSn(conn *DeviceConnection, snList ...string) {
 	}
 }
 
-func (s *Server) GetDevice(sn string) *DeviceConnection {
-	connKey, ok := s.devices.Load(sn)
+// RemoveSn 移除设备或子设备的键值, 并可选关闭设备连接(实际连接的设备才可以关闭)
+func (s *Server) RemoveSn(sn string, closeDeviceConnection bool) {
+	conn := s.GetDeviceConnection(sn)
+	if conn == nil {
+		s.devices.Delete(sn)
+		return
+	}
+	if conn.sn == sn {
+		s.RemoveConnection(conn, closeDeviceConnection)
+		return
+	}
+	s.RemoveDeviceSn(conn, sn)
+}
+
+func (s *Server) GetDeviceHeartbeatTime(sn string) (*time.Time, bool) {
+	val, ok := s.devices.Load(sn)
+	if !ok {
+		return nil, false
+	}
+
+	tuple2, ok := val.(lo.Tuple2[string, time.Time])
+	if !ok {
+		return nil, false
+	}
+
+	return &tuple2.B, true
+}
+
+func (s *Server) GetDeviceConnection(sn string) *DeviceConnection {
+	val, ok := s.devices.Load(sn)
 	if !ok {
 		return nil
 	}
-	conn, ok := s.connections.Load(connKey.(string))
+
+	tuple2, ok := val.(lo.Tuple2[string, time.Time])
+	if !ok {
+		return nil
+	}
+
+	conn, ok := s.connections.Load(tuple2.A)
 	if !ok {
 		return nil
 	}
@@ -200,9 +239,9 @@ func (s *Server) GetDevice(sn string) *DeviceConnection {
 }
 
 func (s *Server) SendCommand(sn string, data map[string]any) error {
-	conn := s.GetDevice(sn)
+	conn := s.GetDeviceConnection(sn)
 	if conn == nil {
-		return fmt.Errorf("device '%s' not found", sn)
+		return errors.Errorf("device '%s' not found", sn)
 	}
 	return conn.SendCommand(data)
 }
@@ -233,6 +272,7 @@ func (s *Server) SendCommand(sn string, data map[string]any) error {
 func (s *Server) connectionCleaner() {
 	defer utils.Catch(func(reason any) {
 		go s.releaseConnection()
+		go s.connectionCleaner()
 	})
 	defer s.wg.Done()
 	ticker := time.NewTicker(5 * time.Second)
@@ -244,13 +284,28 @@ func (s *Server) connectionCleaner() {
 			return
 		case <-ticker.C:
 			count := 0
+
+			var needDelete []lo.Tuple2[string, string]
+			s.devices.Range(func(k, v any) bool {
+				t, ok := v.(lo.Tuple2[string, time.Time])
+				if !ok {
+					return true
+				}
+				if time.Since(t.B) > time.Duration(s.config.HeartbeatTimeout)*time.Second {
+					needDelete = append(needDelete, lo.Tuple2[string, string]{A: k.(string), B: t.A})
+				}
+				return true
+			})
+			for _, sn := range needDelete {
+				s.RemoveSn(utils.ToString(sn), true)
+			}
 			s.connections.Range(func(key, value any) bool {
 				conn, ok := value.(*DeviceConnection)
 				if !ok {
 					return true
 				}
 				if s.config.DeviceDiscoveryMode == DeviceDiscoveryModeSync {
-					conn.Heartbeat(s.config.DeviceSyncDuration, s.config.DeviceDiscoveryFunc, s.config.DeviceDiscoveryCmd)
+					conn.Heartbeat(s.config.HeartbeatInterval, s.config.DeviceDiscoveryFunc, s.config.DeviceDiscoveryCmd)
 				}
 				count++
 				return true

@@ -23,6 +23,20 @@ type ScanResult struct {
 	End         *time.Time `json:"end,omitempty"`
 }
 
+func (this *ScanResult) Run(fn ScanResultHandler) {
+	if this == nil {
+		return
+	}
+	err := fn(this)
+	if err != nil {
+		this.HandleError = err
+	}
+	if this.End != nil {
+		now := time.Now()
+		this.End = &now
+	}
+}
+
 type ScanResultHandler func(result *ScanResult) error
 
 type Codec struct {
@@ -168,14 +182,7 @@ func (this *Codec) Scan(fn ScanResultHandler) error {
 func (this *Codec) EmitResult(result *ScanResult, fn ScanResultHandler) {
 	this.history.Add(result)
 	// 因为是指针,所有后面的修改会影响history中的数据
-	err := fn(result)
-	if err != nil {
-		result.HandleError = err
-	}
-	if result.End != nil {
-		now := time.Now()
-		result.End = &now
-	}
+	go result.Run(fn)
 }
 
 func (this *Codec) Splitter(scanner *utils.Scanner) utils.SplitFunc {

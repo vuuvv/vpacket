@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func setupTestScanner(file ...string) *core.Codec {
@@ -247,6 +248,64 @@ func TestDecodeIoState(t *testing.T) {
 		fmt.Printf("%+v\n", err)
 		return
 	}
+}
+
+func TestDecodeNoCodeC1(t *testing.T) {
+	scanner := setupTestScanner()
+	bs, err := hex.DecodeString(strings.ReplaceAll("7273bbbb8cabcd239ebc45e339e33900000000c100000000", " ", ""))
+	if err != nil {
+		fmt.Printf("%+v\n", err)
+		return
+	}
+	mockStream := new(bytes.Buffer)
+	mockStream.Write(bs)
+
+	err = scanner.Stream(mockStream).Scan(func(result *ScanResult) error {
+		if result.ScanError != nil {
+			fmt.Printf("%+v\n", result.ScanError)
+			return nil
+		}
+		if result.HandleError != nil {
+			fmt.Printf("%+v\n", result.HandleError)
+			return nil
+		}
+		printJson(result.Data)
+		if result.HandleError != nil {
+			fmt.Println(result.HandleError)
+		}
+		if result.ScanError != nil {
+			fmt.Println(result.ScanError)
+		}
+		return nil
+	})
+
+	// scan的后续处理是在协程内，如果不等待, 程序有可能在处理完成之后退出
+	time.Sleep(500 * time.Millisecond)
+	if err != nil {
+		fmt.Printf("%+v\n", err)
+		return
+	}
+}
+
+func TestResponse(t *testing.T) {
+	scanner := setupTestScanner()
+	text := `
+{
+  "sn": "BB8CABCD239EBC45E339E339",
+  "command": "C2",
+  "data": {
+      "code": 0
+  }
+}
+`
+	bs, err := scanner.EncodeFromJson(text)
+
+	if err != nil {
+		fmt.Printf("%+v", err)
+		log.Fatal(err)
+	}
+
+	fmt.Printf(">>> 编码结果: %x\n", bs)
 }
 
 // 辅助函数：构造二进制包 (command: 1-byte, dataLen: 2-byte)

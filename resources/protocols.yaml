@@ -36,6 +36,10 @@ protocols:
       length_adjustment: 24
 
     fields:
+      - name: "subDevice" # 表明是连接网关的子设备,不直接与服务器连接
+        flow: "decode"
+        type: "calc"
+        formula: "true"
       - name: "magic"
         size: 2
         default: '7273'
@@ -193,8 +197,12 @@ protocols:
 
           - value: "C1" # 设备上报ID
             fields:
-              - name: "data.success"
-                flow: "decode" # 设备响应
+              - name: "data.code"
+                flow: "decode"
+                type: "uint"
+                size_expr: "int(fields.dataLen)"
+              - name: "data.code"
+                flow: "encode"
                 type: "uint"
                 size: 1
           - value: "C2" # 设备上报IO状态,IO触发
@@ -210,30 +218,45 @@ protocols:
                   - name: "data.ioState.value"
                     type: "uint"
                     size: 1
+              - name: "data.code"
+                flow: "encode"
+                type: "uint"
+                size: 1
           - value: "C3" # 刷卡信息上报
             flow: "decode" # 只用于解码流程
             fields:
               - name: "data.channel"
+                flow: "decode"
                 type: "uint"
                 size: 1
               - name: "data.idLen"
+                flow: "decode"
                 type: "uint"
                 size: 1
               - name: "data.cardNo"
+                flow: "decode"
                 type: "string"
                 size_expr: "fields.data.idLen"
               - name: "data.userRole"
+                flow: "decode"
                 size: 1
                 default: '00'
               - name: "data.room"
+                flow: "decode"
                 size: 3
                 default: '000000'
               - name: "data.startTime"
+                flow: "decode"
                 size: 4
                 default: '00000000'
               - name: "data.endTime"
+                flow: "decode"
                 size: 4
                 default: '00000000'
+              - name: "data.code"
+                flow: "encode"
+                type: "uint"
+                size: 1
           - value: "FE" # 读取设备ID指令
             fields:
               - name: "data.success"
@@ -262,6 +285,3 @@ protocols:
       - name: "deviceType"
         type: "calc"
         formula: "'dtu'"
-      - name: "connectionDevice"
-        type: "calc"
-        formula: "true"

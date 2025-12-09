@@ -16,6 +16,7 @@ type DeviceConnection struct {
 	server         *Server
 	conn           net.Conn
 	key            string
+	msgQueue       chan []byte
 	lastActiveTime time.Time
 	heartbeatTime  time.Time
 	mu             sync.Mutex
@@ -37,6 +38,11 @@ func NewDeviceConnection(server *Server, conn net.Conn) *DeviceConnection {
 		cancel:         cancel,
 	}
 	server.AddConnection(deviceConn)
+	if deviceConn.server.config.MessageDelayTime > 0 {
+		deviceConn.msgQueue = make(chan []byte, 100)
+		go deviceConn.writeLoop()
+	}
+
 	return deviceConn
 }
 
@@ -59,8 +65,58 @@ func (this *DeviceConnection) RemoteAddr() string {
 func (this *DeviceConnection) Write(data []byte) (int, error) {
 	this.mu.Lock()
 	defer this.mu.Unlock()
-	log.Info("发送报文", this.zapFields(zap.String("data", utils.Bytes2Hex(data)))...)
-	return this.conn.Write(data)
+
+	if this.server.config.MessageDelayTime == 0 {
+		log.Info("发送报文", this.zapFields(zap.String("data", utils.Bytes2Hex(data)))...)
+		return this.conn.Write(data)
+	}
+
+	// 加入队列
+	select {
+	case this.msgQueue <- data:
+		// 成功加入队列
+	default:
+		// 队列满了,丢弃最旧的消息
+		select {
+		case <-this.msgQueue:
+			// 队列已满,丢弃最旧的消息
+		default:
+		}
+		// 再次尝试加入
+		select {
+		case this.msgQueue <- data:
+		default:
+			return 0, errors.New("无法加入连接的写入消息到队列")
+		}
+	}
+	return len(data), nil
+}
+
+func (this *DeviceConnection) writeLoop() {
+	for msg := range this.msgQueue {
+		// 确保距离上次发送至少 200ms
+		this.mu.Lock()
+		elapsed := time.Since(this.lastActiveTime)
+		delayTime := time.Duration(this.server.config.MessageDelayTime) * time.Millisecond
+		if elapsed < delayTime {
+			waitTime := delayTime - elapsed
+			this.mu.Unlock()
+			time.Sleep(waitTime)
+			this.mu.Lock()
+		}
+
+		// 发送消息
+		log.Info("发送报文", this.zapFields(zap.String("data", utils.Bytes2Hex(msg)))...)
+		_, err := this.conn.Write(msg)
+		if err != nil {
+			log.Error(errors.Wrapf(err, "发送报文失败: %s", err.Error()), this.zapFields(zap.String("data", utils.Bytes2Hex(msg)))...)
+			this.mu.Unlock()
+			return
+		}
+
+		this.lastActiveTime = time.Now()
+		this.mu.Unlock()
+	}
 }
 
 func (this *DeviceConnection) UpdateActiveTime() {
@@ -111,49 +167,50 @@ func (this *DeviceConnection) Handle(result *core.ScanResult) error {
 }
 
 func (this *DeviceConnection) setupDeviceSn(result *core.ScanResult) {
-	sn, deviceType := this.getConnectionDevice(result)
-	if sn == "" || deviceType == "" {
+	sn, deviceType, subDevice := this.getConnectionDevice(result)
+	if sn == "" {
 		return
 	}
+
+	if subDevice {
+		// 子设备
+		this.server.AddDevice(this, sn)
+		return
+	}
+
+	// 主连接设备
 	this.sn = sn
 	this.deviceType = deviceType
 	this.server.AddDevice(this, sn)
 }
 
-func (this *DeviceConnection) getConnectionDevice(result *core.ScanResult) (string, string) {
+func (this *DeviceConnection) getConnectionDevice(result *core.ScanResult) (string, string, bool) {
 	if result == nil {
-		return "", ""
+		return "", "", true
 	}
 
 	if result.Data == nil {
-		return "", ""
+		return "", "", true
 	}
 
 	dict, ok := result.Data.(map[string]any)
 	if !ok {
-		return "", ""
-	}
-
-	isConnectionDevice, ok := dict["connectionDevice"].(bool)
-	if !ok {
-		return "", ""
-	}
-
-	if !isConnectionDevice {
-		return "", ""
+		return "", "", true
 	}
 
 	sn, ok := dict["sn"].(string)
 	if !ok {
-		return "", ""
+		return "", "", true
 	}
 
-	deviceType, ok := dict["deviceType"].(string)
+	deviceType, _ := dict["deviceType"].(string)
+
+	subDevice, ok := dict["subDevice"].(bool)
 	if !ok {
-		return "", ""
+		subDevice = false
 	}
 
-	return sn, deviceType
+	return sn, deviceType, subDevice
 }
 
 func (this *DeviceConnection) Heartbeat(duration int, discoveryFunc DeviceDiscoveryFunc, command map[string]any) {

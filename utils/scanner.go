@@ -153,7 +153,10 @@ func (s *Scanner) Scan() bool {
 	}
 	s.scanCalled = true
 	// Loop until we have a token.
+	idx := 0
 	for {
+		idx++
+		//fmt.Printf("开始第%d轮扫描: %d, %d, %x\n", idx, s.start, s.end, s.buf[s.start:s.end])
 		// See if we can get a token with what we already have.
 		// If we've run out of data but have an error, give the split function
 		// a chance to recover any remaining, possibly empty token.
@@ -166,12 +169,15 @@ func (s *Scanner) Scan() bool {
 					// When token is not nil, it means the scanning stops
 					// with a trailing token, and thus the return value
 					// should be true to indicate the existence of the token.
+					//fmt.Printf("扫描到最终token: %x\n", token)
 					return token != nil
 				}
 				s.setErr(err)
+				//fmt.Printf("有错误退出扫描1: %s\n", err.Error())
 				return false
 			}
 			if !s.advance(advance) {
+				//fmt.Printf("退出扫描,返回的advance非法,advance %d, token %x\n", advance, token)
 				return false
 			}
 			s.token = token
@@ -185,6 +191,7 @@ func (s *Scanner) Scan() bool {
 						panic("bufio.Scan: too many empty tokens without progressing")
 					}
 				}
+				//fmt.Printf("返回token: %x\n", token)
 				return true
 			}
 		}
@@ -194,6 +201,7 @@ func (s *Scanner) Scan() bool {
 			// Shut it down.
 			s.start = 0
 			s.end = 0
+			//fmt.Printf("有错误退出扫描2: %s\n", s.err.Error())
 			return false
 		}
 		// Must read more data.
@@ -227,7 +235,9 @@ func (s *Scanner) Scan() bool {
 		// a misbehaving Reader. Officially we don't need to do this, but let's
 		// be extra careful: Scanner is for safe, simple jobs.
 		for loop := 0; ; {
+			//fmt.Println("读取报文")
 			n, err := s.r.Read(s.buf[s.end:len(s.buf)])
+			//fmt.Printf("接收报文%x\n", s.buf[s.end:s.end+n])
 			if n < 0 || len(s.buf)-s.end < n {
 				s.setErr(ErrBadReadCount)
 				break
