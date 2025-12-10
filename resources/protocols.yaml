@@ -110,7 +110,7 @@ protocols:
                 type: "struct"
                 flow: "decode"
                 ref: "ResponseCode"
-              - name: "data.port"
+              - name: "data.gpio"
                 flow: "encode"
                 type: "uint"
                 size: 1
