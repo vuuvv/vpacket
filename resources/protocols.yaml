@@ -14,6 +14,21 @@ data_structures:
         flow: "decode"
         type: "calc"
         formula: "fields.data.code==0"
+  EmptyResponse:
+    fields:
+      - name: "data.code"
+        flow: "decode"
+        type: "uint"
+        size: 1
+      - name: "data.success"
+        flow: "decode"
+        type: "calc"
+        formula: "fields.data.code==0"
+      - name: "data.empty"
+        flow: "decode"
+        type: "calc"
+        formula: "true"
+
 
   # 默认结构：用于无法识别的指令 (可复用结构)
   Unknown_Payload:
@@ -93,6 +108,10 @@ protocols:
                 type: "struct"
                 flow: "decode"
                 ref: "ResponseCode"
+              - name: "data.error"
+                type: "calc"
+                flow: "decode"
+                formula: "fields.data.success ? '' : '[读取IO状态]失败'"
               - name: "data.ioState"
                 type: "array"
                 flow: "decode"
@@ -109,7 +128,11 @@ protocols:
               - name: "data.response.code"
                 type: "struct"
                 flow: "decode"
-                ref: "ResponseCode"
+                ref: "EmptyResponse"
+              - name: "data.error"
+                type: "calc"
+                flow: "decode"
+                formula: "fields.data.success ? '' : '[输出IO]失败'"
               - name: "data.gpio"
                 flow: "encode"
                 type: "uint"
@@ -127,8 +150,12 @@ protocols:
               - name: "data.response.code"
                 type: "struct"
                 flow: "decode"
-                ref: "ResponseCode"
-          - value: "05" # 设置时间戳
+                ref: "EmptyResponse"
+              - name: "data.error"
+                type: "calc"
+                flow: "decode"
+                formula: "fields.data.success ? '' : '[设置时间戳]失败'"
+          - value: "05" # 播放语音
             fields:
               - name: "data.index"
                 flow: "encode"
@@ -137,7 +164,11 @@ protocols:
               - name: "data.response.code"
                 type: "struct"
                 flow: "decode"
-                ref: "ResponseCode"
+                ref: "EmptyResponse"
+              - name: "data.error"
+                type: "calc"
+                flow: "decode"
+                formula: "fields.data.success ? '' : '[播放语音]失败'"
           - value: "0D" # 设置LED显示方向
             fields:
               - name: "data.direction"
@@ -147,8 +178,12 @@ protocols:
               - name: "data.response.code"
                 type: "struct"
                 flow: "decode"
-                ref: "ResponseCode"
-          - value: "0E" # 设置LED显示方向
+                ref: "EmptyResponse"
+              - name: "data.error"
+                type: "calc"
+                flow: "decode"
+                formula: "fields.data.success ? '' : '[设置LED显示方向]失败'"
+          - value: "0E" # 显示文字
             fields:
               - name: "data.duration"
                 flow: "encode"
@@ -193,7 +228,11 @@ protocols:
               - name: "data.response.code"
                 type: "struct"
                 flow: "decode"
-                ref: "ResponseCode"
+                ref: "EmptyResponse"
+              - name: "data.error"
+                type: "calc"
+                flow: "decode"
+                formula: "fields.data.success ? '' : '[显示文字]失败'"
 
           - value: "C1" # 设备上报ID
             fields:

@@ -62,6 +62,7 @@ func (this *DeviceConnection) RemoteAddr() string {
 	return this.conn.RemoteAddr().String()
 }
 
+// func (this *)
 func (this *DeviceConnection) Write(data []byte) (int, error) {
 	this.mu.Lock()
 	defer this.mu.Unlock()
