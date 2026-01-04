@@ -232,31 +232,226 @@ DTU心跳包格式：`[SN:序列号]`
 
 ## 5. 使用示例
 
-### 5.1 发送读取IO状态命令
+## 5. JSON格式数据输入规范
+
+在使用协议进行数据编码时，需要按照以下JSON格式提供输入数据：
+
+### 5.1 通用数据格式
+
+```json
+{
+  "vars": {
+    "packetLen": "总包长度",
+    "dataLen": "数据长度"
+  },
+  "fields": {
+    "command": "命令码",
+    "其他字段": "字段值"
+  }
+}
+```
+
+### 5.2 字段规范详细说明
+
+**重要提示**: `fields`部分的详细字段规范请参考：[Fields字段规范详细说明](fields_specification.md)
+
+该文档包含：
+- 各命令的完整fields结构
+- 字段类型和取值范围
+- 验证规则和错误处理
+- 实际使用示例
+
+### 5.3 常用命令的JSON输入示例
+
+#### 5.3.1 读取IO状态 (命令0x01)
+```json
+{
+  "vars": {
+    "packetLen": "24",
+    "dataLen": "0"
+  },
+  "fields": {
+    "command": "01"
+  }
+}
+```
+
+#### 5.3.2 输出IO (命令0x02)
+```json
+{
+  "vars": {
+    "packetLen": "26",
+    "dataLen": "2"
+  },
+  "fields": {
+    "command": "02",
+    "data": {
+      "gpio": 1,
+      "value": 1
+    }
+  }
+}
+```
+
+#### 5.3.3 设置时间戳 (命令0x04)
+```json
+{
+  "vars": {
+    "packetLen": "28",
+    "dataLen": "4"
+  },
+  "fields": {
+    "command": "04",
+    "data": {
+      "timestamp": 1634567890
+    }
+  }
+}
+```
+
+#### 5.3.4 播放语音 (命令0x05)
+```json
+{
+  "vars": {
+    "packetLen": "25",
+    "dataLen": "1"
+  },
+  "fields": {
+    "command": "05",
+    "data": {
+      "index": 1
+    }
+  }
+}
+```
+
+#### 5.3.5 设置LED显示方向 (命令0x0D)
+```json
+{
+  "vars": {
+    "packetLen": "25",
+    "dataLen": "1"
+  },
+  "fields": {
+    "command": "0D",
+    "data": {
+      "direction": 0
+    }
+  }
+}
+```
+
+#### 5.3.6 显示文字 (命令0x0E)
+```json
+{
+  "vars": {
+    "packetLen": "35",
+    "dataLen": "11"
+  },
+  "fields": {
+    "command": "0E",
+    "data": {
+      "duration": 5,
+      "line1Length": 4,
+      "line1Speed": 100,
+      "line2Length": 0,
+      "line2Speed": 0,
+      "line3Length": 0,
+      "line3Speed": 0,
+      "line4Length": 0,
+      "line4Speed": 0,
+      "content": "48656C6C6F"
+    }
+  }
+}
+```
+
+### 5.4 数据类型要求
+
+#### 5.4.1 数值类型
+- **uint类型**: 必须为正整数或0
+- **hex类型**: 必须为十六进制字符串，不带0x前缀
+- **string类型**: 必须为字符串
+
+#### 5.4.2 必填字段
+- `vars.packetLen`: 总包长度（字节）
+- `vars.dataLen`: 数据部分长度（字节）
+- `fields.command`: 命令码（十六进制字符串）
+
+#### 5.4.3 可选字段
+- 具有`default`属性的字段可以不提供
+- `calc`类型的字段会根据公式自动计算
+
+### 5.5 错误处理
+
+#### 5.5.1 数据验证规则
+- 所有size_expr计算的字段长度必须为正整数
+- CRC校验字段在编码时会自动计算
+- 十六进制字符串必须使用大写字母
+
+#### 5.5.2 常见错误
+```json
+{
+  "error": "字段验证失败",
+  "details": {
+    "field": "data.gpio",
+    "reason": "值必须为非负整数",
+    "received": -1
+  }
+}
+```
+
+---
+
+## 6. 使用示例
+
+### 6.1 发送读取IO状态命令
 ```
 Frame: 7273 AA 123456789012 0000 0000 01 0000 [CRC16] [空数据]
 ```
 
-### 5.2 设备上报IO状态
+### 6.2 设备上报IO状态
 ```
 Frame: 7273 AA 123456789012 0000 0000 C2 0004 [端口1:值1][端口2:值2] [CRC16]
 ```
 
-### 5.3 DTU心跳包
+### 6.3 DTU心跳包
 ```
 Frame: [1234567890]
 ```
 
+### 6.4 完整的JSON编码示例
+
+#### 发送LED显示命令
+```json
+{
+  "vars": {
+    "packetLen": "42",
+    "dataLen": "18"
+  },
+  "fields": {
+    "command": "0E",
+    "data": {
+      "duration": 10,
+      "line1Length": 12,
+      "line1Speed": 50,
+      "line2Length": 6,
+      "line2Speed": 75,
+      "line3Length": 0,
+      "line3Speed": 0,
+      "line4Length": 0,
+      "line4Speed": 0,
+      "content": "E59CA8E5B88BE5B095E5A4A9E5A4A9"
+    }
+  }
+}
+```
+
+生成的二进制帧：
+```
+7273 AA 123456789012 0000 0000 0E 0012 [18字节数据] [CRC16]
+```
+
 ---
 
-## 6. 注意事项
-
-1. **字节序**: 所有多字节数值采用大端序（Big Endian）
-2. **CRC校验**: 使用CRC16-Modbus算法
-3. **字符串编码**: 文本字段使用ASCII编码
-4. **错误处理**: 所有命令都包含错误信息字段，用于故障诊断
-5. **兼容性**: Unknown_Payload结构用于处理未知命令，确保协议的向后兼容性
-
----
-
-*本文档最后更新：根据 protocols.yaml 协议配置生成*
+## 7. 注意事项
