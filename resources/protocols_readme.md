@@ -225,7 +225,7 @@ DTU心跳包格式：`[SN:序列号]`
 - `crc`: CRC校验类型
 - `crc_start`: CRC校验开始位置
 - `crc_end`: CRC校验结束位置
-- `flow`: 数据流方向（encode/decode）
+- `flow`: 数据流方向（encode: 编码成发送给设备的数据,decode: 解码接收到的设备数据）
 - `round`: 轮次，用于多次处理场景
 
 ---
