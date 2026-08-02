@@ -34,6 +34,7 @@ var NewCodecFromFile = core.NewCodecFromFile
 type TcpServer = tcp.Server
 type TcpServerConfig = tcp.ServerConfig
 type DeviceDiscoveryFunc = tcp.DeviceDiscoveryFunc
+type ConnectionHandler = tcp.ConnectionHandler
 
 var NewTcpServer = tcp.NewTCPServer
 

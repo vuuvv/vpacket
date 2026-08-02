@@ -34,6 +34,7 @@ type YamlField struct {
 	Check       string       `yaml:"check"`
 	Condition   string       `yaml:"condition"`
 	Formula     string       `yaml:"formula"`
+	ValueType   string       `yaml:"value_type"` // calc 编码结果的写入类型，例如 hex
 	Then        []*YamlField `yaml:"then"`
 
 	// Switch 相关的字段

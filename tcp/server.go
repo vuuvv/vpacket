@@ -20,6 +20,7 @@ const (
 )
 
 type DeviceDiscoveryFunc func(sn string, deviceType string) (subDevices []string, err error)
+type ConnectionHandler func(conn *DeviceConnection)
 
 type ServerConfig struct {
 	Address             string              `json:"address"`
@@ -30,8 +31,11 @@ type ServerConfig struct {
 	HeartbeatInterval   int                 `json:"HeartbeatInterval"`   // 查询子设备的时间间隔,并向子设备发送心跳,默认是30秒
 	DeviceDiscoveryMode string              `json:"deviceDiscoveryMode"` // 子设备发现模式,默认是通过子设备发送心跳来发现
 	DeviceDiscoveryFunc DeviceDiscoveryFunc `json:"-"`
-	DeviceDiscoveryCmd  map[string]any      `json:"deviceDiscoveryCmd"`
-	MessageDelayTime    int                 `json:"messageDelayTime"` // 发送和接受到消息后，多少毫秒后才能处理下一条消息,如果为0就代表是全双工模式,可以同时发送和接受
+	// ConnectionHandler 在 TCP 连接建立后执行，适用于设备不会主动首报、需服务器先发查询的场景。
+	// 回调执行在独立协程，避免探测逻辑阻塞后续数据读取与其他设备接入。
+	ConnectionHandler  ConnectionHandler `json:"-"`
+	DeviceDiscoveryCmd map[string]any    `json:"deviceDiscoveryCmd"`
+	MessageDelayTime   int               `json:"messageDelayTime"` // 发送和接受到消息后，多少毫秒后才能处理下一条消息,如果为0就代表是全双工模式,可以同时发送和接受
 }
 
 type Server struct {
@@ -148,6 +152,9 @@ func (s *Server) handleConnection(conn net.Conn) {
 
 	deviceConn := NewDeviceConnection(s, conn)
 	defer s.RemoveConnection(deviceConn, false)
+	if s.config.ConnectionHandler != nil {
+		go s.config.ConnectionHandler(deviceConn)
+	}
 	err = deviceConn.Scan(s.scheme)
 	if err != nil {
 		log.Warn(errors.Wrap(err, "Scan fail"), deviceConn.zapFields()...)

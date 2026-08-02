@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"github.com/google/cel-go/cel"
 	"github.com/vuuvv/errors"
 	"golang.org/x/exp/constraints"
 	"strconv"
@@ -102,11 +103,47 @@ func ParseTValue(inputString string, size int, byteOrder binary.ByteOrder) ([]by
 			return value, nil
 		}
 		value = ResizeBytes(value, size, 0, PaddingRight)
-	case "e": // 计算eval
+	case "e": // 静态计算表达式（eval）
+		// ParseTValue 没有协议上下文，只允许无变量的静态整数表达式。
+		// 动态字段计算必须使用 calc 节点；在这里放开 fields/vars 会让默认值解析承担不必要的执行风险。
+		if size < 1 || size > 8 {
+			return nil, errors.Errorf("eval value requires a byte size between 1 and 8, actual %d", size)
+		}
+		env, e := cel.NewEnv()
+		if e != nil {
+			return nil, errors.Errorf("create eval environment failed: %v", e)
+		}
+		ast, issues := env.Compile(dataStr)
+		if issues != nil && issues.Err() != nil {
+			return nil, errors.Errorf("invalid eval expression 'e''%s': %v", dataStr, issues.Err())
+		}
+		program, e := env.Program(ast)
+		if e != nil {
+			return nil, errors.Errorf("compile eval expression 'e''%s' failed: %v", dataStr, e)
+		}
+		out, _, e := program.Eval(map[string]any{})
+		if e != nil {
+			return nil, errors.Errorf("evaluate expression 'e''%s' failed: %v", dataStr, e)
+		}
+
+		var number uint64
+		switch result := out.Value().(type) {
+		case int64:
+			if result < 0 {
+				return nil, errors.Errorf("eval expression 'e''%s' returned a negative value", dataStr)
+			}
+			number = uint64(result)
+		case uint64:
+			number = result
+		default:
+			// 只接受整数，避免浮点舍入或布尔值被隐式转换后写入错误控制字节。
+			return nil, errors.Errorf("eval expression 'e''%s' must return an integer, actual %T", dataStr, out.Value())
+		}
+		value = Uint64ToBytes(number, size, byteOrder)
 
 	default:
 		// 如果是 T'xxx' 格式但 T 是未知类型
-		return nil, errors.Errorf("unrecognized type identifier: %s. Expected b, o, d, x, h, or s.", typeID)
+		return nil, errors.Errorf("unrecognized type identifier: %s. Expected b, o, d, x, h, s, or e.", typeID)
 	}
 
 	return value, nil

@@ -1,6 +1,6 @@
 module github.com/vuuvv/vpacket
 
-go 1.24.5
+go 1.26.0
 
 require (
 	github.com/google/cel-go v0.26.1

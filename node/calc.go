@@ -8,9 +8,10 @@ import (
 type CalcNode struct {
 	core.BaseNode
 	core.BaseEncodable
-	Formula  *core.CelEvaluator
-	Size     int                // 一般用于encode
-	SizeExpr *core.CelEvaluator // 一般用于encode
+	Formula   *core.CelEvaluator
+	ValueType string
+	Size      int                // 一般用于encode
+	SizeExpr  *core.CelEvaluator // 一般用于encode
 }
 
 func (n *CalcNode) Compile(yf *core.YamlField, structures core.DataStructures) error {
@@ -21,6 +22,7 @@ func (n *CalcNode) Compile(yf *core.YamlField, structures core.DataStructures) e
 	}
 
 	n.Size = yf.Size
+	n.ValueType = yf.ValueType
 	if yf.SizeExpr != "" {
 		expr, err := core.CompileExpression(yf.SizeExpr)
 		if err != nil {
@@ -64,6 +66,8 @@ func (n *CalcNode) Encode(ctx *core.Context) error {
 	if err != nil {
 		return errors.WithStack(err)
 	}
+	// 计算字段的结果也写入上下文，供后续条件节点复用；否则方向等派生字段无法驱动分支。
+	ctx.SetField(n.Name, val)
 
 	switch v := val.(type) {
 	case []byte:
@@ -89,6 +93,9 @@ func (n *CalcNode) Encode(ctx *core.Context) error {
 	case uint64:
 		return ctx.Write(core.NodeTypeInt, v, size, n)
 	case string:
+		if n.ValueType != "" {
+			return ctx.Write(n.ValueType, v, size, n)
+		}
 		return ctx.Write(core.NodeTypeString, v, size, n)
 	case float64:
 		return ctx.Write(core.NodeTypeFloat, v, size, n)

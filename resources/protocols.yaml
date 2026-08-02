@@ -145,8 +145,9 @@ protocols:
             fields:
               - name: "data.timestamp"
                 flow: "encode"
-                type: "uint"
+                type: "calc"
                 size: 4
+                formula: ""
               - name: "data.response.code"
                 type: "struct"
                 flow: "decode"

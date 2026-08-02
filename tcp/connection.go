@@ -2,14 +2,17 @@ package tcp
 
 import (
 	"context"
+	"encoding/hex"
+	"net"
+	"sync"
+	"time"
+
+	"github.com/spf13/cast"
 	"github.com/vuuvv/errors"
 	"github.com/vuuvv/vpacket/core"
 	"github.com/vuuvv/vpacket/log"
 	"github.com/vuuvv/vpacket/utils"
 	"go.uber.org/zap"
-	"net"
-	"sync"
-	"time"
 )
 
 type DeviceConnection struct {
@@ -244,19 +247,35 @@ func (this *DeviceConnection) Heartbeat(duration int, discoveryFunc DeviceDiscov
 	this.server.AddDevice(this, onlyNew...)
 	this.subDevices = subDevices
 
-	for _, sn := range subDevices {
-		heartbeatCommand := map[string]any{}
-		for k, v := range command {
-			heartbeatCommand[k] = v
-		}
-		if _, ok := heartbeatCommand["sn"]; !ok {
-			heartbeatCommand["sn"] = sn
-		}
+	var hexBs []byte
+	useRawHex := false
 
-		data, err := this.Encode(heartbeatCommand)
-		if err != nil {
-			log.Warn(errors.Wrapf(err, "编码子设备心跳命令失败: %s, %s", sn, err.Error()), this.zapFields()...)
-			continue
+	if hexRaw, ok := command["hex"]; ok {
+		hexText, err := cast.ToStringE(hexRaw)
+		if err == nil {
+			hexBs, err = hex.DecodeString(hexText)
+			if err == nil {
+				useRawHex = true
+			}
+		}
+	}
+
+	for _, sn := range subDevices {
+		data := hexBs
+		if !useRawHex {
+			heartbeatCommand := map[string]any{}
+			for k, v := range command {
+				heartbeatCommand[k] = v
+			}
+			if _, ok := heartbeatCommand["sn"]; !ok {
+				heartbeatCommand["sn"] = sn
+			}
+
+			data, err = this.Encode(heartbeatCommand)
+			if err != nil {
+				log.Warn(errors.Wrapf(err, "编码子设备心跳命令失败: %s, %s", sn, err.Error()), this.zapFields()...)
+				continue
+			}
 		}
 		_, err = this.Write(data)
 		if err != nil {
