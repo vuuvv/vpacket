@@ -93,6 +93,9 @@ protocols:
       length_adjustment: 21
 
     fields:
+      - name: "deviceType"
+        type: "calc"
+        formula: "'board'"
       - name: "magic"
         type: "hex"
         size: 2
@@ -141,76 +144,79 @@ protocols:
         size: 2
         round: 1
         # 文档中的 CRC 是数据区 CRC，不覆盖前 21 字节帧头；设备以大端字节顺序保存数值。
-      - type: "if"
-        name: "dataStart"
+      # 零字节标记节点只记录数据区起点，不写入任何协议字节；这样可以移除原先
+      # 仅为 track_offset 存在的 condition=true 包装，同时继续正确回填 dataLen。
+      - name: "dataStart"
+        type: "calc"
+        size: 0
         track_offset: true
-        condition: "true"
-        # 应答码是每个数据区的首字节。即使查询请求没有业务参数，也必须携带该占位字节，
-        # 否则设备和分帧器会对 dataLen 的含义产生歧义。
-        then:
-          - name: "data.code"
-            flow: "decode"
-            type: "uint"
-            size: 1
-          - name: "data.code"
-            flow: "encode"
-            type: "uint"
-            size: 1
-            default: "00"
+        formula: "0"
+      # 应答码是每个数据区的首字节。即使查询请求没有业务参数，也必须携带该占位字节，
+      # 否则设备和分帧器会对 dataLen 的含义产生歧义。
+      - name: "data.code"
+        flow: "decode"
+        type: "uint"
+        size: 1
+      - name: "data.success"
+        flow: "decode"
+        type: "calc"
+        formula: "int(fields.data.code)==0"
+      - name: "data.code"
+        flow: "encode"
+        type: "uint"
+        size: 1
+        default: "00"
       - type: "switch"
         field: "command"
         cases:
           # 0x01 读取设备型号：CC 上报为型号 1 字节 + 版本号 4 字节。
           - value: "01"
             fields:
-              - type: "if"
-                condition: "fields.direction == 'CC'"
-                then:
-                  - name: "data.deviceType"
-                    type: "uint"
-                    size: 1
-                  - name: "data.version"
-                    type: "hex"
-                    size: 4
+              - name: "data.deviceType"
+                flow: "decode"
+                type: "uint"
+                size: 1
+              - name: "data.version"
+                flow: "decode"
+                type: "hex"
+                size: 4
           - value: "02"
             fields:
-              - type: "if"
-                condition: "fields.direction == 'CC'"
-                then:
-                  - name: "data.maxFrameLength"
-                    type: "uint"
-                    size: 2
+              - name: "data.maxFrameLength"
+                flow: "decode"
+                type: "uint"
+                size: 2
           - value: "03"
             fields:
-              - type: "if"
-                condition: "fields.direction == 'CC'"
-                then:
-                  - name: "data.controlGroupCount"
-                    type: "uint"
-                    size: 1
+              - name: "data.controlGroupCount"
+                flow: "decode"
+                type: "uint"
+                size: 1
           - value: "04"
             fields:
               - type: "if"
+                flow: "encode"
                 condition: "fields.direction == 'BB'"
                 then:
                   - name: "data.groupNo"
                     type: "uint"
                     size: 1
-              - type: "if"
-                condition: "fields.direction == 'CC'"
-                then:
-                  - name: "data.groupNo"
-                    type: "uint"
-                    size: 1
-                  - name: "data.relayLevel"
-                    type: "uint"
-                    size: 1
-                  - name: "data.openButtonLevel"
-                    type: "uint"
-                    size: 1
-                  - name: "data.doorSensorLevel"
-                    type: "uint"
-                    size: 1
+              - name: "data.groupNo"
+                flow: "decode"
+                type: "uint"
+                size: 1
+              - name: "data.relayLevel"
+                flow: "decode"
+                type: "uint"
+                size: 1
+              - name: "data.openButtonLevel"
+                flow: "decode"
+                type: "uint"
+                size: 1
+              - name: "data.doorSensorLevel"
+                flow: "decode"
+                type: "uint"
+                size: 1
           - value: "05"
             fields:
               - type: "if"
@@ -244,6 +250,7 @@ protocols:
           - value: "08"
             fields:
               - type: "if"
+                flow: "encode"
                 condition: "fields.direction == 'AA'"
                 then:
                   - name: "data.groupNo"
@@ -254,15 +261,14 @@ protocols:
                     size: 1
           - value: "09"
             fields:
-              - type: "if"
-                condition: "fields.direction == 'CC'"
-                then:
-                  - name: "data.flashSize"
-                    type: "uint"
-                    size: 4
+              - name: "data.flashSize"
+                flow: "decode"
+                type: "uint"
+                size: 4
           - value: "0A"
             fields:
               - type: "if"
+                flow: "encode"
                 condition: "fields.direction in ['AA', 'BB']"
                 then:
                   - name: "data.flashAddress"
@@ -272,78 +278,67 @@ protocols:
                     type: "uint"
                     size: 2
               - type: "if"
+                flow: "encode"
                 condition: "fields.direction == 'AA'"
                 then:
                   - name: "data.flashData"
                     type: "hex"
                     size: -1
-              - type: "if"
+              - name: "data.flashData"
                 flow: "decode"
-                condition: "fields.direction == 'CC'"
-                then:
-                  - name: "data.flashData"
-                    type: "hex"
-                    size_expr: "int(fields.dataLen) - 1"
-              - type: "if"
-                flow: "encode"
-                condition: "fields.direction == 'CC'"
-                then:
-                  - name: "data.flashData"
-                    type: "hex"
-                    size: -1
+                type: "hex"
+                size_expr: "int(fields.dataLen) - 1"
           - value: "0B"
             fields:
-              - type: "if"
-                condition: "fields.direction == 'CC'"
-                then:
-                  - name: "data.fontAddress"
-                    type: "uint"
-                    size: 4
-                  - name: "data.fontSize"
-                    type: "uint"
-                    size: 4
+              - name: "data.fontAddress"
+                flow: "decode"
+                type: "uint"
+                size: 4
+              - name: "data.fontSize"
+                flow: "decode"
+                type: "uint"
+                size: 4
           - value: "0C"
             fields:
-              - type: "if"
-                condition: "fields.direction == 'CC'"
-                then:
-                  - name: "data.fontAddress"
-                    type: "uint"
-                    size: 4
-                  - name: "data.fontSize"
-                    type: "uint"
-                    size: 4
+              - name: "data.fontAddress"
+                flow: "decode"
+                type: "uint"
+                size: 4
+              - name: "data.fontSize"
+                flow: "decode"
+                type: "uint"
+                size: 4
           - value: "0D"
             fields:
-              - type: "if"
-                condition: "fields.direction == 'CC'"
-                then:
-                  - name: "data.firmwareAddress"
-                    type: "uint"
-                    size: 4
+              - name: "data.firmwareAddress"
+                flow: "decode"
+                type: "uint"
+                size: 4
           - value: "0E"
             fields:
-              - type: "if"
-                condition: "fields.direction == 'CC'"
-                then:
-                  - name: "data.audioAddress"
-                    type: "uint"
-                    size: 4
-                  - name: "data.audioDataSize"
-                    type: "uint"
-                    size: 4
-                  - name: "data.audioCount"
-                    type: "uint"
-                    size: 1
+              - name: "data.audioAddress"
+                flow: "decode"
+                type: "uint"
+                size: 4
+              - name: "data.audioDataSize"
+                flow: "decode"
+                type: "uint"
+                size: 4
+              - name: "data.audioCount"
+                flow: "decode"
+                type: "uint"
+                size: 1
           - value: "0F"
             fields:
               - type: "if"
+                flow: "encode"
                 condition: "fields.direction in ['AA', 'BB']"
                 then:
                   - name: "data.audioNo"
                     type: "uint"
                     size: 1
               - type: "if"
+                flow: "encode"
                 condition: "fields.direction == 'AA'"
                 then:
                   - name: "data.sampleRate"
@@ -352,15 +347,14 @@ protocols:
                   - name: "data.audioLength"
                     type: "uint"
                     size: 4
-              - type: "if"
-                condition: "fields.direction == 'CC'"
-                then:
-                  - name: "data.sampleRate"
-                    type: "uint"
-                    size: 1
-                  - name: "data.audioLength"
-                    type: "uint"
-                    size: 4
+              - name: "data.sampleRate"
+                flow: "decode"
+                type: "uint"
+                size: 1
+              - name: "data.audioLength"
+                flow: "decode"
+                type: "uint"
+                size: 4
           - value: "10"
             fields:
               - type: "if"
@@ -372,6 +366,7 @@ protocols:
           - value: "11"
             fields:
               - type: "if"
+                flow: "encode"
                 condition: "fields.direction == 'AA'"
                 then:
                   - name: "data.promptNo"
@@ -383,11 +378,13 @@ protocols:
                 condition: "fields.direction in ['AA', 'CC']"
                 then:
                   - name: "data.timestamp"
-                    type: "uint"
+                    type: "calc"
                     size: 4
+                    formula: "has(fields.timestamp) ? fields.timestamp : int(now()/1000)"
           - value: "13"
             fields:
               - type: "if"
+                flow: "encode"
                 condition: "fields.direction == 'AA'"
                 then:
                   - name: "data.firmwareLength"
@@ -410,6 +407,7 @@ protocols:
           - value: "15"
             fields:
               - type: "if"
+                flow: "encode"
                 condition: "fields.direction == 'AA'"
                 then:
                   - name: "data.durationSeconds"
@@ -420,21 +418,21 @@ protocols:
           - value: "16"
             fields:
               - type: "if"
+                flow: "encode"
                 condition: "fields.direction in ['AA', 'BB']"
                 then:
                   - name: "data.displayNo"
                     type: "uint"
                     size: 1
               - type: "if"
+                flow: "encode"
                 condition: "fields.direction == 'AA'"
                 then:
                   - type: "struct"
                     ref: "DisplayLines"
-              - type: "if"
-                condition: "fields.direction == 'CC'"
-                then:
-                  - type: "struct"
-                    ref: "DisplayLines"
+              - type: "struct"
+                flow: "decode"
+                ref: "DisplayLines"
           - value: "17"
             fields:
               - type: "if"
@@ -445,16 +443,14 @@ protocols:
                     size: 1
           - value: "18"
             fields:
-              - type: "if"
-                condition: "fields.direction == 'CC'"
-                then:
-                  - name: "data.readerNo"
-                    type: "uint"
-                    size: 1
+              - name: "data.readerNo"
+                flow: "decode"
+                type: "uint"
+                size: 1
               # 解码时根据 dataLen 判断五位/八位卡号；五位卡号没有 HID 字节。
               - type: "if"
                 flow: "decode"
-                condition: "fields.direction == 'CC' && fields.dataLen == 5"
+                condition: "fields.dataLen == 5"
                 then:
                   - name: "data.hid"
                     flow: "decode"
@@ -463,18 +459,17 @@ protocols:
               # 编码主动上报时 dataLen 尚未在第二轮回填，必须以 HID 是否存在判断，
               # 否则 CEL 会访问不存在的 dataLen 并导致八位卡号上报无法发出。
               - type: "if"
-                condition: "fields.direction == 'CC' && has(fields.data.hid)"
+                flow: "encode"
+                condition: "has(fields.data.hid)"
                 then:
                   - name: "data.hid"
                     flow: "encode"
                     type: "uint"
                     size: 1
-              - type: "if"
-                condition: "fields.direction == 'CC'"
-                then:
-                  - name: "data.pid"
-                    type: "uint"
-                    size: 2
+              - name: "data.pid"
+                flow: "decode"
+                type: "uint"
+                size: 2
           - value: "19"
             fields:
               - type: "if"
@@ -510,6 +505,7 @@ protocols:
           - value: "1D"
             fields:
               - type: "if"
+                flow: "encode"
                 condition: "fields.direction == 'BB'"
                 then:
                   - name: "data.hid"
@@ -526,6 +522,7 @@ protocols:
           - value: "1E"
             fields:
               - type: "if"
+                flow: "encode"
                 condition: "fields.direction == 'AA'"
                 then:
                   - name: "data.hid"
@@ -540,36 +537,32 @@ protocols:
                 ref: "NoPayload"
           - value: "20"
             fields:
-              - type: "if"
-                condition: "fields.direction == 'CC'"
-                then:
-                  - name: "data.userCount"
-                    type: "uint"
-                    size: 2
+              - name: "data.userCount"
+                flow: "decode"
+                type: "uint"
+                size: 2
           - value: "21"
             fields:
               - type: "if"
+                flow: "encode"
                 condition: "fields.direction == 'BB'"
                 then:
                   - name: "data.userIndex"
                     type: "uint"
                     size: 2
-              - type: "if"
-                condition: "fields.direction == 'CC'"
-                then:
-                  - type: "struct"
-                    ref: "UserInfo"
+              - type: "struct"
+                flow: "decode"
+                ref: "UserInfo"
           - value: "22"
             fields:
-              - type: "if"
-                condition: "fields.direction == 'CC'"
-                then:
-                  - name: "data.userOffsetTableAddress"
-                    type: "uint"
-                    size: 4
-                  - name: "data.userInfoTableAddress"
-                    type: "uint"
-                    size: 4
+              - name: "data.userOffsetTableAddress"
+                flow: "decode"
+                type: "uint"
+                size: 4
+              - name: "data.userInfoTableAddress"
+                flow: "decode"
+                type: "uint"
+                size: 4
           - value: "23"
             fields:
               - type: "if"
@@ -588,6 +581,7 @@ protocols:
           - value: "25"
             fields:
               - type: "if"
+                flow: "encode"
                 condition: "fields.direction == 'AA'"
                 then:
                   - name: "data.port"
@@ -596,29 +590,18 @@ protocols:
                   - name: "data.host"
                     type: "string"
                     size: -1
-              - type: "if"
+              - name: "data.port"
                 flow: "decode"
-                condition: "fields.direction == 'CC'"
-                then:
-                  - name: "data.port"
-                    type: "uint"
-                    size: 2
-                  - name: "data.host"
-                    type: "string"
-                    size_expr: "int(fields.dataLen) - 3"
-              - type: "if"
-                flow: "encode"
-                condition: "fields.direction == 'CC'"
-                then:
-                  - name: "data.port"
-                    type: "uint"
-                    size: 2
-                  - name: "data.host"
-                    type: "string"
-                    size: -1
+                type: "uint"
+                size: 2
+              - name: "data.host"
+                flow: "decode"
+                type: "string"
+                size_expr: "int(fields.dataLen) - 3"
           - value: "F1"
             fields:
               - type: "if"
+                flow: "encode"
                 condition: "fields.direction == 'AA'"
                 then:
                   - name: "data.printEnabled"

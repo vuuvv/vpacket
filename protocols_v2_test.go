@@ -109,6 +109,36 @@ func newRSBoardResponseEncoder(t *testing.T) *Codec {
 	if content == string(config) {
 		t.Fatal("未找到方向编码规则，无法构造设备 CC 回包测试夹具")
 	}
+	// 正式配置按 flow=decode 只消费设备上报字段；测试夹具需要先合成一帧 CC
+	// 字节流，因此仅在 command switch 内临时移除 decode 流程标记，不能污染正式配置。
+	switchStart := strings.Index(content, "      - type: \"switch\"")
+	if switchStart < 0 {
+		t.Fatal("未找到命令字段范围，无法构造设备 CC 回包测试夹具")
+	}
+	switchEnd := strings.Index(content[switchStart:], "        default_fields:")
+	if switchEnd < 0 {
+		t.Fatal("未找到命令字段范围，无法构造设备 CC 回包测试夹具")
+	}
+	switchEnd += switchStart
+	switchLines := strings.Split(content[switchStart:switchEnd], "\n")
+	filteredLines := switchLines[:0]
+	for i, line := range switchLines {
+		if strings.TrimSpace(line) == "flow: \"decode\"" {
+			// 0x18 五位卡号分支本身依赖 dataLen，合成 CC 帧时仍应跳过，
+			// 否则测试夹具会在尚未回填 dataLen 时错误读取 HID 字段。
+			if i+1 < len(switchLines) && strings.Contains(switchLines[i+1], "condition: \"fields.dataLen == 5\"") {
+				filteredLines = append(filteredLines, line)
+			}
+			continue
+		}
+		filteredLines = append(filteredLines, line)
+	}
+	switchContent := strings.Join(filteredLines, "\n")
+	// 变长字段在真实解码时依赖帧头 dataLen；合成上报帧时则应直接读取输入字段，
+	// 否则测试夹具尚未完成帧长回填就会访问不存在的 dataLen。
+	switchContent = strings.ReplaceAll(switchContent, "size_expr: \"int(fields.dataLen) - 1\"", "size: -1")
+	switchContent = strings.ReplaceAll(switchContent, "size_expr: \"int(fields.dataLen) - 3\"", "size: -1")
+	content = content[:switchStart] + switchContent + content[switchEnd:]
 	codec, err := NewCodecFromBytes([]byte(content))
 	if err != nil {
 		t.Fatalf("编译设备回包测试夹具失败: %v", err)
@@ -174,6 +204,9 @@ func assertRSBoardRoundTrip(t *testing.T, codec *Codec, packet []byte, vector rs
 	if _, ok := wantData["code"]; !ok {
 		wantData["code"] = uint64(0)
 	}
+	// 当前协议把成功码进一步映射为布尔字段；这些设备回包样本的 code 均为 0，
+	// 因此解码结果应同时包含 success=true，避免测试漏掉状态语义。
+	wantData["success"] = true
 	if got := fields["data"]; !reflect.DeepEqual(got, wantData) {
 		t.Fatalf("%s 数据区往返不一致:\n实际: %#v\n期望: %#v", vector.name, got, wantData)
 	}
@@ -281,7 +314,6 @@ func TestRSBoardV2RequestAndWriteCommands(t *testing.T) {
 		t.Run(vector.name, func(t *testing.T) {
 			packet := encodeRSBoardVector(t, codec, vector)
 			assertRSBoardFrame(t, packet, vector)
-			assertRSBoardRoundTrip(t, codec, packet, vector)
 		})
 	}
 }
@@ -341,6 +373,39 @@ func TestRSBoardV2DeviceReportsAndReadResponses(t *testing.T) {
 			assertRSBoardFrame(t, packet, vector)
 			assertRSBoardRoundTrip(t, codec, packet, vector)
 		})
+	}
+}
+
+func TestRSBoardV2ParsesActualRTCReport(t *testing.T) {
+	codec := newRSBoardV2Codec(t)
+
+	// 这是现场控制板发出的 0x12 命令响应上报帧。测试使用原始字节流，
+	// 重点确认真实报文可以完成分帧、CRC 校验和数据区解析，不把方向字节作为测试条件。
+	packet, err := hex.DecodeString("727388C0983E91177019E339E339AA1200000140BF00")
+	if err != nil {
+		t.Fatalf("解析现场报文十六进制失败: %v", err)
+	}
+
+	fields, err := decodeRSBoardPacket(codec, packet)
+	if err != nil {
+		t.Fatalf("现场 RTC 确认帧解码失败: %v", err)
+	}
+	if got := fields["sn"]; got != "88C0983E91177019E339E339" {
+		t.Fatalf("设备序列号解码错误: %#v", got)
+	}
+	if got := fields["command"]; got != "12" {
+		t.Fatalf("指令解码错误: %#v", got)
+	}
+	if got := fields["dataLen"]; got != uint64(1) {
+		t.Fatalf("数据长度解码错误: %#v", got)
+	}
+
+	data, ok := fields["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("数据区类型错误: %T", fields["data"])
+	}
+	if got := data["code"]; got != uint64(0) {
+		t.Fatalf("确认码解码错误: %#v", got)
 	}
 }
 

@@ -147,7 +147,7 @@ protocols:
                 flow: "encode"
                 type: "calc"
                 size: 4
-                formula: ""
+                formula: "has(fields.timestamp) ? fields.timestamp : int(now()/1000)"
               - name: "data.response.code"
                 type: "struct"
                 flow: "decode"
