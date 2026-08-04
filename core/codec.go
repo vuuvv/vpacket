@@ -131,39 +131,8 @@ func (this *Codec) Scan(fn ScanResultHandler) error {
 	scanner.Split(this.Splitter(scanner))
 
 	for scanner.Scan() {
-		scannerResult := scanner.Result()
-		if scannerResult == nil {
-			continue
-		}
-		framingRuleResult, ok := scannerResult.(*FramingRuleMatchResult)
-		if !ok {
-			continue
-		}
-
-		result := &ScanResult{
-			Abaddon:   framingRuleResult.Abandoned,
-			Packet:    framingRuleResult.Token,
-			Protocol:  framingRuleResult.Protocol,
-			ScanError: framingRuleResult.Error,
-			Start:     &framingRuleResult.Time,
-		}
-
-		// 分包有错误
-		if result.ScanError != nil {
-			this.EmitResult(result, fn)
-			continue
-		}
-
-		if result.Abaddon {
-			this.EmitResult(result, fn)
-			continue
-		}
-
-		data, err := result.Protocol.Decode(result.Packet)
-		result.Data = data
-		if err != nil {
-			result.ScanError = err
-			this.EmitResult(result, fn)
+		result := this.scanResult(scanner)
+		if result == nil {
 			continue
 		}
 		this.EmitResult(result, fn)
@@ -177,6 +146,70 @@ func (this *Codec) Scan(fn ScanResultHandler) error {
 		return errors.WithStack(err)
 	}
 	return nil
+}
+
+// ScanSync 与 Scan 使用完全相同的分帧器和协议解码流程，但在当前调用栈
+// 同步执行回调。调试注入需要在 HTTP/流程节点返回前拿到所有 messageHandle
+// 错误；如果复用 Scan 的异步回调，接口会在下游尚未执行时提前返回，导致
+// 调试结果丢失且错误无法反馈给调用方。
+func (this *Codec) ScanSync(fn ScanResultHandler) error {
+	if fn == nil {
+		return errors.New("同步扫描回调不能为空")
+	}
+
+	scanner := utils.NewScanner(this.stream)
+	scanner.Split(this.Splitter(scanner))
+	defer scanner.SetResult(nil)
+
+	for scanner.Scan() {
+		result := this.scanResult(scanner)
+		if result == nil {
+			continue
+		}
+		this.history.Add(result)
+		result.Run(fn)
+		if result.HandleError != nil {
+			// 同步路径必须把回调（通常是 messageHandle）返回的错误交给
+			// 调用方，否则调试接口会误报成功而掩盖下游处理失败。
+			return errors.WithStack(result.HandleError)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return errors.WithStack(err)
+	}
+	return nil
+}
+
+// scanResult 从 Scanner 当前结果构建 ScanResult，并负责唯一的一份协议
+// Decode 调用。Scan 和 ScanSync 都必须经过这里，避免两条路径的分帧、错误
+// 或字段解析语义逐渐漂移。
+func (this *Codec) scanResult(scanner *utils.Scanner) *ScanResult {
+	scannerResult := scanner.Result()
+	if scannerResult == nil {
+		return nil
+	}
+	framingRuleResult, ok := scannerResult.(*FramingRuleMatchResult)
+	if !ok {
+		return nil
+	}
+
+	result := &ScanResult{
+		Abaddon:   framingRuleResult.Abandoned,
+		Packet:    framingRuleResult.Token,
+		Protocol:  framingRuleResult.Protocol,
+		ScanError: framingRuleResult.Error,
+		Start:     &framingRuleResult.Time,
+	}
+	if result.ScanError != nil || result.Abaddon {
+		return result
+	}
+	data, err := result.Protocol.Decode(result.Packet)
+	result.Data = data
+	if err != nil {
+		result.ScanError = err
+	}
+	return result
 }
 
 func (this *Codec) EmitResult(result *ScanResult, fn ScanResultHandler) {
