@@ -55,6 +55,10 @@ protocols:
         flow: "decode"
         type: "calc"
         formula: "true"
+      - name: "deviceType" # 表明是连接网关的子设备,不直接与服务器连接
+        flow: "decode"
+        type: "calc"
+        formula: '"board"'
       - name: "magic"
         size: 2
         default: '7273'
