@@ -443,6 +443,11 @@ protocols:
                     size: 1
           - value: "18"
             fields:
+              - name: "data.checkDirection"
+                flow: "decode"
+                type: "calc"
+                formula: "fields.direction='CC' ? '' : '上报卡号需CC'"
+                check: "fields.direction=='CC'"
               - name: "data.readerNo"
                 flow: "decode"
                 type: "uint"

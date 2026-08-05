@@ -31,6 +31,9 @@ func (n *CalcNode) Compile(yf *core.YamlField, structures core.DataStructures) e
 		n.SizeExpr = expr
 	}
 
+	if yf.Formula == "" {
+		return errors.Errorf("formula is empty %s", n.Name)
+	}
 	expr, err := core.CompileExpression(yf.Formula)
 	if err != nil {
 		return errors.WithStack(err)
