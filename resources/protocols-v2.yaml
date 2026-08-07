@@ -110,7 +110,7 @@ protocols:
         value_type: "hex"
         size: 1
         # 编码默认走查询方向 BB；只有调用方明确 write=true 时才允许生成写指令 AA。
-        formula: "has(fields.write) && fields.write == true ? 'AA' : 'BB'"
+        formula: "has(fields.resp) && fields.resp == 'true' ? 'CC' : (has(fields.write) && fields.write == true ? 'AA' : 'BB')"
       - name: "direction"
         flow: "decode"
         type: "hex"
@@ -446,7 +446,7 @@ protocols:
               - name: "data.checkDirection"
                 flow: "decode"
                 type: "calc"
-                formula: "fields.direction='CC' ? '' : '上报卡号需CC'"
+                formula: "fields.direction=='CC' ? '' : '上报卡号需CC'"
                 check: "fields.direction=='CC'"
               - name: "data.readerNo"
                 flow: "decode"
@@ -475,6 +475,10 @@ protocols:
                 flow: "decode"
                 type: "uint"
                 size: 2
+              - name: "data.cardNo"
+                flow: "decode"
+                type: "calc"
+                formula: "int(fields.data.hid) == int(fields.data.pid) ? string(fields.data.pid) : string(fields.data.hid) + string(fields.data.pid)"
           - value: "19"
             fields:
               - type: "if"
