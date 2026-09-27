@@ -100,7 +100,7 @@ func newRSBoardResponseEncoder(t *testing.T) *Codec {
         value_type: "hex"
         size: 1
         # 编码默认走查询方向 BB；只有调用方明确 write=true 时才允许生成写指令 AA。
-        formula: "has(fields.write) && fields.write == true ? 'AA' : 'BB'"`
+        formula: "has(fields.resp) && fields.resp == 'true' ? 'CC' : (has(fields.write) && fields.write == true ? 'AA' : 'BB')"`
 	to := `      - name: "direction"
         flow: "encode"
         type: "hex"
@@ -407,6 +407,90 @@ func TestRSBoardV2ParsesActualRTCReport(t *testing.T) {
 	if got := data["code"]; got != uint64(0) {
 		t.Fatalf("确认码解码错误: %#v", got)
 	}
+}
+
+func TestRSBoardV2DecodesBBReadReplies(t *testing.T) {
+	codec := newRSBoardV2Codec(t)
+	// 现场 0x05 查询回包的方向仍为 BB。逐项检查有读写两种用途的指令，
+	// 防止配置只按 CC 解码而把设备已返回的设置值静默丢弃。
+	vectors := []struct {
+		command string
+		payload []byte
+		want    map[string]any
+	}{
+		{"01", []byte{0, 2, 1, 2, 3, 4}, rsData("deviceType", uint64(2), "version", "01020304")},
+		{"02", []byte{0, 4, 0}, rsData("maxFrameLength", uint64(1024))},
+		{"03", []byte{0, 2}, rsData("controlGroupCount", uint64(2))},
+		{"04", []byte{0, 1, 1, 0, 1}, rsData("groupNo", uint64(1), "relayLevel", uint64(1), "openButtonLevel", uint64(0), "doorSensorLevel", uint64(1))},
+		{"05", []byte{0, 1, 0}, rsData("enabled", uint64(1), "openLevel", uint64(0))},
+		{"06", []byte{0, 1, 1}, rsData("enabled", uint64(1), "openLevel", uint64(1))},
+		{"07", []byte{0, 0, 0, 1, 244}, rsData("relayCloseDurationMs", uint64(500))},
+		{"09", []byte{0, 0, 0x10, 0, 0}, rsData("flashSize", uint64(1048576))},
+		{"0B", []byte{0, 0, 1, 0, 0, 0, 2, 0, 0}, rsData("fontAddress", uint64(65536), "fontSize", uint64(131072))},
+		{"0C", []byte{0, 0, 3, 0, 0, 0, 4, 0, 0}, rsData("fontAddress", uint64(196608), "fontSize", uint64(262144))},
+		{"0D", []byte{0, 0, 5, 0, 0}, rsData("firmwareAddress", uint64(327680))},
+		{"0E", []byte{0, 0, 6, 0, 0, 0, 0, 125, 0, 10}, rsData("audioAddress", uint64(393216), "audioDataSize", uint64(32000), "audioCount", uint64(10))},
+		{"10", []byte{0, 4}, rsData("volume", uint64(4))},
+		{"12", []byte{0, 0x65, 0xEC, 0x87, 0x80}, rsData("timestamp", uint64(1710000000))},
+		{"14", []byte{0, 2, 1}, rsData("hubCount", uint64(2), "displayDirection", uint64(1))},
+		{"17", []byte{0, 3}, rsData("cardReportIntervalSeconds", uint64(3))},
+		{"19", []byte{0, 1}, rsData("onlineMode", uint64(1))},
+		{"1A", []byte{0, 0, 0, 0x75, 0x30}, rsData("heartbeatIntervalMs", uint64(30000))},
+		{"1B", []byte{0, 3, 0x20}, rsData("reportRetryTimeoutMs", uint64(800))},
+		{"1C", []byte{0, 4}, rsData("sameWgIdFlashReadIntervalSeconds", uint64(4))},
+		{"1D", append([]byte{0, 12, 0x87, 0x07, 1}, make([]byte, 16)...), rsData("user", rsData("hid", uint64(12), "pid", uint64(34567), "permission", uint64(1), "startTimestamp", uint64(0), "endTimestamp", uint64(0), "reserved", "0000000000000000"))},
+		{"20", []byte{0, 0, 7}, rsData("userCount", uint64(7))},
+		{"21", append([]byte{0, 12, 0x87, 0x07, 1}, make([]byte, 16)...), rsData("user", rsData("hid", uint64(12), "pid", uint64(34567), "permission", uint64(1), "startTimestamp", uint64(0), "endTimestamp", uint64(0), "reserved", "0000000000000000"))},
+		{"22", []byte{0, 0, 7, 0, 0, 0, 7, 0x10, 0}, rsData("userOffsetTableAddress", uint64(458752), "userInfoTableAddress", uint64(462848))},
+		{"23", []byte{0, 8}, rsData("userIdDigits", uint64(8))},
+		{"24", []byte{0, 1, 0x23, 0x28, 192, 168, 1, 10, 192, 168, 1, 1, 255, 255, 255, 0}, rsData("dhcpEnabled", uint64(1), "port", uint64(9000), "ip", "C0A8010A", "gateway", "C0A80101", "subnetMask", "FFFFFF00")},
+		{"25", append([]byte{0, 0x23, 0x32}, []byte("server.example")...), rsData("port", uint64(9010), "host", "server.example")},
+	}
+	for _, vector := range vectors {
+		t.Run(vector.command, func(t *testing.T) {
+			packet := rsBoardRawReply(t, "BB", vector.command, vector.payload)
+			decoded, err := decodeRSBoardPacket(codec, packet)
+			if err != nil {
+				t.Fatalf("BB 查询回包解码失败: %v", err)
+			}
+			data := decoded["data"].(map[string]any)
+			for key, want := range vector.want {
+				if got := data[key]; !reflect.DeepEqual(got, want) {
+					t.Errorf("字段 %s: 实际 %#v，期望 %#v", key, got, want)
+				}
+			}
+		})
+	}
+	// 写入确认帧只有应答码，不能把查询返回字段当作必填数据继续读取。
+	for _, command := range []string{"05", "08", "10", "11", "12", "15", "17", "19", "1A", "1B", "1C", "1D", "23", "24", "25"} {
+		t.Run("AA确认_"+command, func(t *testing.T) {
+			packet := rsBoardRawReply(t, "AA", command, []byte{0})
+			decoded, err := decodeRSBoardPacket(codec, packet)
+			if err != nil {
+				t.Fatalf("AA 写入确认帧解码失败: %v", err)
+			}
+			data := decoded["data"].(map[string]any)
+			if data["code"] != uint64(0) || data["success"] != true {
+				t.Fatalf("AA 写入确认结果错误: %#v", data)
+			}
+		})
+	}
+}
+
+func rsBoardRawReply(t *testing.T, direction, command string, payload []byte) []byte {
+	t.Helper()
+	uid, _ := hex.DecodeString(rsBoardTestUID)
+	directionByte, _ := hex.DecodeString(direction)
+	commandByte, _ := hex.DecodeString(command)
+	packet := append([]byte{0x72, 0x73}, uid...)
+	packet = append(packet, directionByte[0], commandByte[0], 0)
+	packet = binary.BigEndian.AppendUint16(packet, uint16(len(payload)))
+	crc, err := core.Crc(payload, "crc16_modbus")
+	if err != nil {
+		t.Fatalf("计算测试回包 CRC 失败: %v", err)
+	}
+	packet = binary.BigEndian.AppendUint16(packet, uint16(crc))
+	return append(packet, payload...)
 }
 
 func TestRSBoardV2RejectsInvalidDataCRC(t *testing.T) {

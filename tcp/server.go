@@ -29,14 +29,15 @@ type ServerConfig struct {
 	WriteBufferSize     int                 `json:"writeBufferSize"`
 	MaxConnections      int                 `json:"maxConnections"`
 	HeartbeatTimeout    int                 `json:"heartbeatTimeout"`    // 心跳过期时间,默认是60秒
-	HeartbeatInterval   int                 `json:"HeartbeatInterval"`   // 查询子设备的时间间隔,并向子设备发送心跳,默认是30秒
+	HeartbeatInterval   int                 `json:"heartbeatInterval"`   // 设备发现重试及服务器主动心跳的周期，默认30秒
 	DeviceDiscoveryMode string              `json:"deviceDiscoveryMode"` // 子设备发现模式,默认是通过子设备发送心跳来发现
 	DeviceDiscoveryFunc DeviceDiscoveryFunc `json:"-"`
 	// ConnectionHandler 在 TCP 连接建立后执行，适用于设备不会主动首报、需服务器先发查询的场景。
 	// 回调执行在独立协程，避免探测逻辑阻塞后续数据读取与其他设备接入。
 	ConnectionHandler  ConnectionHandler `json:"-"`
-	DeviceDiscoveryCmd map[string]any    `json:"deviceDiscoveryCmd"`
-	MessageDelayTime   int               `json:"messageDelayTime"` // 发送和接受到消息后，多少毫秒后才能处理下一条消息,如果为0就代表是全双工模式,可以同时发送和接受
+	DeviceDiscoveryCmd map[string]any    `json:"deviceDiscoveryCmd"` // 建连后发送，直到获得主设备 SN
+	ServerHeartbeatCmd map[string]any    `json:"serverHeartbeatCmd"` // 获得主设备 SN 后用于子设备主动心跳
+	MessageDelayTime   int               `json:"messageDelayTime"`   // 发送和接受到消息后，多少毫秒后才能处理下一条消息,如果为0就代表是全双工模式,可以同时发送和接受
 }
 
 type Server struct {
@@ -153,6 +154,16 @@ func (s *Server) handleConnection(conn net.Conn) {
 
 	deviceConn := NewDeviceConnection(s, conn)
 	defer s.RemoveConnection(deviceConn, false)
+	// 正常断线也要取消发现轮询，否则没有 SN 的连接会一直保留探测协程。
+	defer deviceConn.cancel()
+	if len(s.config.DeviceDiscoveryCmd) > 0 {
+		interval := s.config.HeartbeatInterval
+		if interval <= 0 {
+			interval = 30
+		}
+		// 设备可能在连接后保持静默，先立即探测，再按配置周期重试直到取得 SN。
+		go deviceConn.discoverDevice(s.config.DeviceDiscoveryCmd, time.Duration(interval)*time.Second)
+	}
 	if s.config.ConnectionHandler != nil {
 		go s.config.ConnectionHandler(deviceConn)
 	}
@@ -182,8 +193,9 @@ func (s *Server) AddDevice(conn *DeviceConnection, snList ...string) {
 }
 
 func (s *Server) RemoveDevice(conn *DeviceConnection) {
-	if conn.sn != "" {
-		s.RemoveDeviceSn(conn, conn.sn)
+	sn, _ := conn.identity()
+	if sn != "" {
+		s.RemoveDeviceSn(conn, sn)
 	}
 	for _, subDevice := range conn.subDevices {
 		s.RemoveDeviceSn(conn, subDevice)
@@ -207,7 +219,8 @@ func (s *Server) RemoveSn(sn string, closeDeviceConnection bool) {
 		s.devices.Delete(sn)
 		return
 	}
-	if conn.sn == sn {
+	connectionSn, _ := conn.identity()
+	if connectionSn == sn {
 		s.RemoveConnection(conn, closeDeviceConnection)
 		return
 	}
@@ -312,8 +325,8 @@ func (s *Server) connectionWatcher() {
 				if !ok {
 					return true
 				}
-				if s.config.DeviceDiscoveryMode == DeviceDiscoveryModeSync {
-					conn.Heartbeat(s.config.HeartbeatInterval, s.config.DeviceDiscoveryFunc, s.config.DeviceDiscoveryCmd)
+				if s.config.DeviceDiscoveryMode == DeviceDiscoveryModeSync && len(s.config.ServerHeartbeatCmd) > 0 {
+					conn.Heartbeat(s.config.HeartbeatInterval, s.config.DeviceDiscoveryFunc, s.config.ServerHeartbeatCmd)
 				}
 				count++
 				return true

@@ -23,8 +23,10 @@ type DeviceConnection struct {
 	lastActiveTime time.Time
 	heartbeatTime  time.Time
 	mu             sync.Mutex
+	identityMu     sync.RWMutex
 	ctx            context.Context
 	cancel         context.CancelFunc
+	identified     chan struct{}
 	sn             string // 实际的连接设备，可能是设备,dtu,网关等
 	deviceType     string
 	subDevices     []string // 子设备的key(一般是序列号),子设备可以查询服务器获取,或者子设备自己发送心跳(哪种形式应该由服务器进行配置)
@@ -39,6 +41,7 @@ func NewDeviceConnection(server *Server, conn net.Conn) *DeviceConnection {
 		lastActiveTime: time.Now(),
 		ctx:            ctx,
 		cancel:         cancel,
+		identified:     make(chan struct{}),
 	}
 	server.AddConnection(deviceConn)
 	if deviceConn.server.config.MessageDelayTime > 0 {
@@ -183,9 +186,72 @@ func (this *DeviceConnection) setupDeviceSn(result *core.ScanResult) {
 	}
 
 	// 主连接设备
+	this.identityMu.Lock()
+	firstIdentified := this.sn == ""
 	this.sn = sn
 	this.deviceType = deviceType
+	if firstIdentified {
+		// 发现轮询通过此信号立即退出，避免拿到 SN 后仍等待下一次定时器。
+		close(this.identified)
+	}
+	this.identityMu.Unlock()
 	this.server.AddDevice(this, sn)
+}
+
+func (this *DeviceConnection) identity() (string, string) {
+	this.identityMu.RLock()
+	defer this.identityMu.RUnlock()
+	return this.sn, this.deviceType
+}
+
+// discoverDevice 在建连时先发一次探测命令；设备持续静默时按周期重发，取得主设备 SN 或断线后停止。
+func (this *DeviceConnection) discoverDevice(command map[string]any, interval time.Duration) {
+	if len(command) == 0 {
+		// 未配置发现命令时保持设备主动上报模式，不发送空报文。
+		return
+	}
+	if interval <= 0 {
+		interval = 30 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-this.ctx.Done():
+			return
+		case <-this.identified:
+			return
+		default:
+		}
+
+		if err := this.sendConfiguredCommand(command); err != nil {
+			log.Warn(errors.Wrapf(err, "发送设备发现命令失败: %s", err.Error()), this.zapFields()...)
+		}
+
+		select {
+		case <-this.ctx.Done():
+			return
+		case <-this.identified:
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (this *DeviceConnection) sendConfiguredCommand(command map[string]any) error {
+	// 厂商探测帧可能不是协议编码器支持的完整报文，hex 配置需要原样下发。
+	if hexRaw, ok := command["hex"]; ok {
+		hexText, err := cast.ToStringE(hexRaw)
+		if err == nil {
+			data, err := hex.DecodeString(hexText)
+			if err == nil {
+				_, err = this.Write(data)
+				return err
+			}
+		}
+	}
+	return this.SendCommand(command)
 }
 
 func (this *DeviceConnection) getConnectionDevice(result *core.ScanResult) (string, string, bool) {
@@ -218,7 +284,8 @@ func (this *DeviceConnection) getConnectionDevice(result *core.ScanResult) (stri
 }
 
 func (this *DeviceConnection) Heartbeat(duration int, discoveryFunc DeviceDiscoveryFunc, command map[string]any) {
-	if this.sn == "" {
+	sn, deviceType := this.identity()
+	if sn == "" {
 		return
 	}
 
@@ -236,9 +303,9 @@ func (this *DeviceConnection) Heartbeat(duration int, discoveryFunc DeviceDiscov
 		return
 	}
 
-	subDevices, err := discoveryFunc(this.sn, this.deviceType)
+	subDevices, err := discoveryFunc(sn, deviceType)
 	if err != nil {
-		log.Warn(errors.Wrapf(err, "查询子设备失败: %s, %s", this.sn, err.Error()), this.zapFields()...)
+		log.Warn(errors.Wrapf(err, "查询子设备失败: %s, %s", sn, err.Error()), this.zapFields()...)
 		return
 	}
 	onlyOld, onlyNew, _ := utils.DifferenceBy(this.subDevices, subDevices, func(item string) string { return item })

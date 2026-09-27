@@ -219,8 +219,20 @@ protocols:
                 size: 1
           - value: "05"
             fields:
+              # 写入命令只有 AA 请求携带参数；查询的 BB 回包需要独立解码，避免遗漏设备返回的数据。
               - type: "if"
-                condition: "fields.direction in ['AA', 'CC']"
+                flow: "encode"
+                condition: "fields.direction == 'AA'"
+                then:
+                  - name: "data.enabled"
+                    type: "uint"
+                    size: 1
+                  - name: "data.openLevel"
+                    type: "uint"
+                    size: 1
+              - type: "if"
+                flow: "decode"
+                condition: "fields.direction in ['BB', 'CC']"
                 then:
                   - name: "data.enabled"
                     type: "uint"
@@ -230,8 +242,20 @@ protocols:
                     size: 1
           - value: "06"
             fields:
+              # 写入命令只有 AA 请求携带参数；查询的 BB 回包需要独立解码，避免遗漏设备返回的数据。
               - type: "if"
-                condition: "fields.direction in ['AA', 'CC']"
+                flow: "encode"
+                condition: "fields.direction == 'AA'"
+                then:
+                  - name: "data.enabled"
+                    type: "uint"
+                    size: 1
+                  - name: "data.openLevel"
+                    type: "uint"
+                    size: 1
+              - type: "if"
+                flow: "decode"
+                condition: "fields.direction in ['BB', 'CC']"
                 then:
                   - name: "data.enabled"
                     type: "uint"
@@ -241,8 +265,17 @@ protocols:
                     size: 1
           - value: "07"
             fields:
+              # 写入命令只有 AA 请求携带参数；查询的 BB 回包需要独立解码，避免遗漏设备返回的数据。
               - type: "if"
-                condition: "fields.direction in ['AA', 'CC']"
+                flow: "encode"
+                condition: "fields.direction == 'AA'"
+                then:
+                  - name: "data.relayCloseDurationMs"
+                    type: "uint"
+                    size: 4
+              - type: "if"
+                flow: "decode"
+                condition: "fields.direction in ['BB', 'CC']"
                 then:
                   - name: "data.relayCloseDurationMs"
                     type: "uint"
@@ -366,7 +399,7 @@ protocols:
                     size: 1
               - type: "if"
                 flow: "decode"
-                condition: "fields.direction == 'BB'"
+                condition: "fields.direction in ['BB', 'CC']"
                 then:
                   - name: "data.volume"
                     type: "uint"
@@ -392,10 +425,10 @@ protocols:
                     formula: "has(fields.timestamp) ? fields.timestamp : int(now()/1000)"
               - type: "if"
                 flow: "decode"
-                condition: "fields.direction in ['BB']"
+                condition: "fields.direction in ['BB', 'CC']"
                 then:
                   - name: "data.timestamp"
-                    type: "hex"
+                    type: "uint"
                     size: 4
           - value: "13"
             fields:
@@ -411,8 +444,20 @@ protocols:
                     size: 4
           - value: "14"
             fields:
+              # 写入命令只有 AA 请求携带参数；查询的 BB 回包需要独立解码，避免遗漏设备返回的数据。
               - type: "if"
-                condition: "fields.direction in ['AA', 'CC']"
+                flow: "encode"
+                condition: "fields.direction == 'AA'"
+                then:
+                  - name: "data.hubCount"
+                    type: "uint"
+                    size: 1
+                  - name: "data.displayDirection"
+                    type: "uint"
+                    size: 1
+              - type: "if"
+                flow: "decode"
+                condition: "fields.direction in ['BB', 'CC']"
                 then:
                   - name: "data.hubCount"
                     type: "uint"
@@ -451,8 +496,17 @@ protocols:
                 ref: "DisplayLines"
           - value: "17"
             fields:
+              # 写入命令只有 AA 请求携带参数；查询的 BB 回包需要独立解码，避免遗漏设备返回的数据。
               - type: "if"
-                condition: "fields.direction in ['AA', 'CC']"
+                flow: "encode"
+                condition: "fields.direction == 'AA'"
+                then:
+                  - name: "data.cardReportIntervalSeconds"
+                    type: "uint"
+                    size: 1
+              - type: "if"
+                flow: "decode"
+                condition: "fields.direction in ['BB', 'CC']"
                 then:
                   - name: "data.cardReportIntervalSeconds"
                     type: "uint"
@@ -497,32 +551,68 @@ protocols:
                 formula: "int(fields.data.hid) == int(fields.data.pid) ? string(fields.data.pid) : string(fields.data.hid) + string(fields.data.pid)"
           - value: "19"
             fields:
+              # 文档把读取模式值列在下发参数栏，现场 BB 回包却带有当前模式字节；必须按回包解码。
               - type: "if"
-                condition: "fields.direction in ['AA', 'CC']"
+                flow: "encode"
+                condition: "fields.direction == 'AA'"
+                then:
+                  - name: "data.onlineMode"
+                    type: "uint"
+                    size: 1
+              - type: "if"
+                flow: "decode"
+                condition: "fields.direction in ['BB', 'CC']"
                 then:
                   - name: "data.onlineMode"
                     type: "uint"
                     size: 1
           - value: "1A"
             fields:
+              # 写入命令只有 AA 请求携带参数；查询的 BB 回包需要独立解码，避免遗漏设备返回的数据。
               - type: "if"
-                condition: "fields.direction in ['AA', 'CC']"
+                flow: "encode"
+                condition: "fields.direction == 'AA'"
+                then:
+                  - name: "data.heartbeatIntervalMs"
+                    type: "uint"
+                    size: 4
+              - type: "if"
+                flow: "decode"
+                condition: "fields.direction in ['BB', 'CC']"
                 then:
                   - name: "data.heartbeatIntervalMs"
                     type: "uint"
                     size: 4
           - value: "1B"
             fields:
+              # 写入命令只有 AA 请求携带参数；查询的 BB 回包需要独立解码，避免遗漏设备返回的数据。
               - type: "if"
-                condition: "fields.direction in ['AA', 'CC']"
+                flow: "encode"
+                condition: "fields.direction == 'AA'"
+                then:
+                  - name: "data.reportRetryTimeoutMs"
+                    type: "uint"
+                    size: 2
+              - type: "if"
+                flow: "decode"
+                condition: "fields.direction in ['BB', 'CC']"
                 then:
                   - name: "data.reportRetryTimeoutMs"
                     type: "uint"
                     size: 2
           - value: "1C"
             fields:
+              # 写入命令只有 AA 请求携带参数；查询的 BB 回包需要独立解码，避免遗漏设备返回的数据。
               - type: "if"
-                condition: "fields.direction in ['AA', 'CC']"
+                flow: "encode"
+                condition: "fields.direction == 'AA'"
+                then:
+                  - name: "data.sameWgIdFlashReadIntervalSeconds"
+                    type: "uint"
+                    size: 1
+              - type: "if"
+                flow: "decode"
+                condition: "fields.direction in ['BB', 'CC']"
                 then:
                   - name: "data.sameWgIdFlashReadIntervalSeconds"
                     type: "uint"
@@ -539,8 +629,16 @@ protocols:
                   - name: "data.pid"
                     type: "uint"
                     size: 2
+              # 写入命令只有 AA 请求携带参数；查询的 BB 回包需要独立解码，避免遗漏设备返回的数据。
               - type: "if"
-                condition: "fields.direction in ['AA', 'CC']"
+                flow: "encode"
+                condition: "fields.direction == 'AA'"
+                then:
+                  - type: "struct"
+                    ref: "UserInfo"
+              - type: "if"
+                flow: "decode"
+                condition: "fields.direction in ['BB', 'CC']"
                 then:
                   - type: "struct"
                     ref: "UserInfo"
@@ -590,35 +688,59 @@ protocols:
                 size: 4
           - value: "23"
             fields:
+              # 写入命令只有 AA 请求携带参数；查询的 BB 回包需要独立解码，避免遗漏设备返回的数据。
               - type: "if"
-                condition: "fields.direction in ['AA', 'CC']"
+                flow: "encode"
+                condition: "fields.direction == 'AA'"
+                then:
+                  - name: "data.userIdDigits"
+                    type: "uint"
+                    size: 1
+              - type: "if"
+                flow: "decode"
+                condition: "fields.direction in ['BB', 'CC']"
                 then:
                   - name: "data.userIdDigits"
                     type: "uint"
                     size: 1
           - value: "24"
             fields:
+              # 写入命令只有 AA 请求携带参数；查询的 BB 回包需要独立解码，避免遗漏设备返回的数据。
               - type: "if"
-                condition: "fields.direction in ['AA', 'CC']"
+                flow: "encode"
+                condition: "fields.direction == 'AA'"
+                then:
+                  - type: "struct"
+                    ref: "TcpClientSetting"
+              - type: "if"
+                flow: "decode"
+                condition: "fields.direction in ['BB', 'CC']"
                 then:
                   - type: "struct"
                     ref: "TcpClientSetting"
           - value: "25"
             fields:
-              - name: "data.port"
-                type: "uint"
-                size: 2
               - type: "if"
                 flow: "encode"
                 condition: "fields.direction == 'AA'"
                 then:
+                  - name: "data.port"
+                    type: "uint"
+                    size: 2
                   - name: "data.host"
                     type: "string"
                     size: -1
-              - name: "data.host"
+              # BB 查询回包包含端口和变长主机名；AA 写入确认只有应答码，不能继续读取这些字节。
+              - type: "if"
                 flow: "decode"
-                type: "string"
-                size_expr: "int(fields.dataLen) - 3"
+                condition: "fields.direction in ['BB', 'CC']"
+                then:
+                  - name: "data.port"
+                    type: "uint"
+                    size: 2
+                  - name: "data.host"
+                    type: "string"
+                    size_expr: "int(fields.dataLen) - 3"
           - value: "F1"
             fields:
               - type: "if"
