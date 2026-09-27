@@ -6,7 +6,7 @@ set -ex
 go mod tidy
 
 # 获取远程仓库中的最新标签
-latest_tag=$(git ls-remote --tags origin | awk '{print $2}' | cut -d '/' -f 3 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' | /bin/sort -V | tail -n 1)
+latest_tag=$(git ls-remote --tags github | awk '{print $2}' | cut -d '/' -f 3 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' | /usr/bin/sort -V | tail -n 1)
 
 if [ -z "$latest_tag" ]; then
   # 如果当前没有标签，则创建一个新的标签
@@ -29,10 +29,12 @@ git tag "$new_tag"
 
 # 推送新的标签到远程仓库
 git push origin tag "$new_tag"
+git push github tag "$new_tag"
 
 # 推送新的提交到远程仓库
 default_branch=$(git symbolic-ref --short HEAD)
 git push origin "$default_branch"
+git push github "$default_branch"
 
 # 输出新的标签名称
 echo "已创建新标签：$new_tag"
