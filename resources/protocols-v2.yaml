@@ -358,7 +358,15 @@ protocols:
           - value: "10"
             fields:
               - type: "if"
-                condition: "fields.direction in ['AA', 'CC']"
+                flow: "encode"
+                condition: "fields.direction == 'AA'"
+                then:
+                  - name: "data.volume"
+                    type: "uint"
+                    size: 1
+              - type: "if"
+                flow: "decode"
+                condition: "fields.direction == 'BB'"
                 then:
                   - name: "data.volume"
                     type: "uint"
@@ -375,12 +383,20 @@ protocols:
           - value: "12"
             fields:
               - type: "if"
+                flow: "encode"
                 condition: "fields.direction in ['AA', 'CC']"
                 then:
                   - name: "data.timestamp"
                     type: "calc"
                     size: 4
                     formula: "has(fields.timestamp) ? fields.timestamp : int(now()/1000)"
+              - type: "if"
+                flow: "decode"
+                condition: "fields.direction in ['BB']"
+                then:
+                  - name: "data.timestamp"
+                    type: "hex"
+                    size: 4
           - value: "13"
             fields:
               - type: "if"
@@ -589,20 +605,16 @@ protocols:
                     ref: "TcpClientSetting"
           - value: "25"
             fields:
+              - name: "data.port"
+                type: "uint"
+                size: 2
               - type: "if"
                 flow: "encode"
                 condition: "fields.direction == 'AA'"
                 then:
-                  - name: "data.port"
-                    type: "uint"
-                    size: 2
                   - name: "data.host"
                     type: "string"
                     size: -1
-              - name: "data.port"
-                flow: "decode"
-                type: "uint"
-                size: 2
               - name: "data.host"
                 flow: "decode"
                 type: "string"

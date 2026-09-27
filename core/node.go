@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/binary"
+
 	"github.com/vuuvv/errors"
 	"github.com/vuuvv/vpacket/utils"
 )
@@ -144,7 +145,11 @@ func NodeCompile(fields []*YamlField, structures DataStructures) ([]Node, error)
 		}
 		node, err := fn(yf, structures)
 		if err != nil {
-			return nil, errors.Wrapf(err, "Field '%s' compile failed", yf.Name)
+			name := yf.Name
+			if name == "" {
+				name = yf.Type
+			}
+			return nil, errors.Wrapf(err, "Field '%s' compile failed", name)
 		}
 		nodes = append(nodes, node)
 	}

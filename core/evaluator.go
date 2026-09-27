@@ -25,6 +25,7 @@ func CompileExpression(expr string) (*CelEvaluator, error) {
 				}),
 			),
 		),
+		cel.OptionalTypes(),
 	)
 	if err != nil {
 		return nil, errors.WithStack(err)

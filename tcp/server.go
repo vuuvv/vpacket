@@ -2,16 +2,17 @@ package tcp
 
 import (
 	"context"
+	"net"
+	"sync"
+	"sync/atomic"
+	"time"
+
 	"github.com/samber/lo"
 	"github.com/vuuvv/errors"
 	"github.com/vuuvv/vpacket/core"
 	"github.com/vuuvv/vpacket/log"
 	"github.com/vuuvv/vpacket/utils"
 	"go.uber.org/zap"
-	"net"
-	"sync"
-	"sync/atomic"
-	"time"
 )
 
 const (
@@ -93,7 +94,7 @@ func (s *Server) Start() error {
 
 	// 启动连接清理协程
 	s.wg.Add(1)
-	go s.connectionCleaner()
+	go s.connectionWatcher()
 
 	// 接受连接
 	for {
@@ -275,11 +276,11 @@ func (s *Server) SendCommand(sn string, data map[string]any) error {
 //}
 //}
 
-// connectionCleaner 连接清理器
-func (s *Server) connectionCleaner() {
+// connectionWatcher 连接清理器
+func (s *Server) connectionWatcher() {
 	defer utils.Catch(func(reason any) {
 		go s.releaseConnection()
-		go s.connectionCleaner()
+		go s.connectionWatcher()
 	})
 	defer s.wg.Done()
 	ticker := time.NewTicker(5 * time.Second)
