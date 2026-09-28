@@ -93,6 +93,10 @@ protocols:
       length_adjustment: 21
 
     fields:
+      - name: "subDevice" # 表明是实际的设备,不是网关
+        flow: "decode"
+        type: "calc"
+        formula: "true"
       - name: "deviceType"
         type: "calc"
         formula: "'board'"
