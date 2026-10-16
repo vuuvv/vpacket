@@ -45,6 +45,7 @@ type Server struct {
 	listener         net.Listener
 	connections      sync.Map // 实际的连接数量
 	devices          sync.Map // 用于使用设备ID或子设备ID查询设备连接,发送指令
+	deviceIndexMu    sync.Mutex
 	wg               sync.WaitGroup
 	ctx              context.Context
 	cancel           context.CancelFunc
@@ -179,14 +180,27 @@ func (s *Server) AddConnection(conn *DeviceConnection) {
 }
 
 func (s *Server) RemoveConnection(conn *DeviceConnection, stopManual bool) {
-	s.connections.Delete(conn.key)
-	s.RemoveDevice(conn)
+	s.deviceIndexMu.Lock()
+	s.removeConnectionLocked(conn)
+	s.deviceIndexMu.Unlock()
 	if stopManual {
 		conn.Close()
 	}
 }
 
+func (s *Server) removeConnectionLocked(conn *DeviceConnection) {
+	s.connections.Delete(conn.key)
+	s.RemoveDevice(conn)
+}
+
 func (s *Server) AddDevice(conn *DeviceConnection, snList ...string) {
+	s.deviceIndexMu.Lock()
+	defer s.deviceIndexMu.Unlock()
+	registered, exists := s.connections.Load(conn.key)
+	if !exists || registered != conn || conn.ctx.Err() != nil {
+		// 异步解码回调可能晚于断线清理完成，禁止已移除的连接重新登记设备在线索引。
+		return
+	}
 	for _, sn := range snList {
 		s.devices.Store(sn, lo.Tuple2[string, time.Time]{A: conn.key, B: time.Now()})
 	}
@@ -293,11 +307,14 @@ func (s *Server) SendCommand(sn string, data map[string]any) error {
 
 // connectionWatcher 连接清理器
 func (s *Server) connectionWatcher() {
-	defer utils.Catch(func(reason any) {
-		go s.releaseConnection()
-		go s.connectionWatcher()
-	})
 	defer s.wg.Done()
+	defer utils.Catch(func(reason any) {
+		if s.ctx.Err() == nil {
+			// 清理协程不代表一条设备连接；重启前先登记 WaitGroup，不能误减连接计数。
+			s.wg.Add(1)
+			go s.connectionWatcher()
+		}
+	})
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
@@ -307,21 +324,9 @@ func (s *Server) connectionWatcher() {
 			return
 		case <-ticker.C:
 			count := 0
-
-			var needDelete []lo.Tuple2[string, string]
-			s.devices.Range(func(k, v any) bool {
-				t, ok := v.(lo.Tuple2[string, time.Time])
-				if !ok {
-					return true
-				}
-				if time.Since(t.B) > time.Duration(s.config.HeartbeatTimeout)*time.Second {
-					needDelete = append(needDelete, lo.Tuple2[string, string]{A: k.(string), B: t.A})
-				}
-				return true
-			})
-			for _, sn := range needDelete {
-				s.RemoveSn(utils.ToString(sn), true)
-			}
+			now := time.Now()
+			s.expireDevices(now)
+			s.expireUnidentifiedConnections(now)
 			s.connections.Range(func(key, value any) bool {
 				conn, ok := value.(*DeviceConnection)
 				if !ok {
@@ -336,6 +341,84 @@ func (s *Server) connectionWatcher() {
 			log.Info("Active connections", zap.Int("count", count))
 		}
 	}
+}
+
+func (s *Server) expireUnidentifiedConnections(now time.Time) {
+	if s.config.HeartbeatTimeout <= 0 {
+		return
+	}
+	timeout := time.Duration(s.config.HeartbeatTimeout) * time.Second
+	s.connections.Range(func(_ any, value any) bool {
+		conn, ok := value.(*DeviceConnection)
+		if !ok || now.Sub(conn.GetLastActiveTime()) <= timeout {
+			return true
+		}
+		s.deviceIndexMu.Lock()
+		conn.identityMu.Lock()
+		// 判定和摘除连接必须与异步设备登记互斥，避免刚识别的设备被空闲扫描误关。
+		idle := conn.sn == "" && now.Sub(conn.GetLastActiveTime()) > timeout
+		if idle {
+			s.connections.Delete(conn.key)
+		}
+		conn.identityMu.Unlock()
+		s.deviceIndexMu.Unlock()
+		if idle {
+			conn.Close()
+		}
+		return true
+	})
+}
+
+func (s *Server) expireDevices(now time.Time) {
+	if s.config.HeartbeatTimeout <= 0 {
+		return
+	}
+	type expiredDevice struct {
+		sn    string
+		entry lo.Tuple2[string, time.Time]
+	}
+	var expired []expiredDevice
+	s.devices.Range(func(key, value any) bool {
+		sn, snOK := key.(string)
+		entry, entryOK := value.(lo.Tuple2[string, time.Time])
+		if snOK && entryOK && now.Sub(entry.B) > time.Duration(s.config.HeartbeatTimeout)*time.Second {
+			expired = append(expired, expiredDevice{sn: sn, entry: entry})
+		}
+		return true
+	})
+	for _, item := range expired {
+		s.expireDevice(item.sn, item.entry)
+	}
+}
+
+func (s *Server) expireDevice(sn string, observed lo.Tuple2[string, time.Time]) {
+	// 仅删除扫描时看到的旧版本；期间收到新报文或设备重连时，不能把新的在线索引误删。
+	s.deviceIndexMu.Lock()
+	if !s.devices.CompareAndDelete(sn, observed) {
+		s.deviceIndexMu.Unlock()
+		return
+	}
+	value, ok := s.connections.Load(observed.A)
+	if !ok {
+		s.deviceIndexMu.Unlock()
+		return
+	}
+	conn, ok := value.(*DeviceConnection)
+	if !ok {
+		s.deviceIndexMu.Unlock()
+		return
+	}
+	connectionSn, _ := conn.identity()
+	if connectionSn == sn {
+		// 主设备失联意味着整条 TCP 连接不可信；关闭连接并清理该连接下所有子设备索引。
+		s.removeConnectionLocked(conn)
+		s.deviceIndexMu.Unlock()
+		conn.Close()
+		return
+	}
+	// 仅子设备过期时保留网关连接，避免影响同一连接上仍在线的其他设备。
+	conn.removeSubDevice(sn)
+	s.deviceIndexMu.Unlock()
 }
 
 // Stop 停止服务器

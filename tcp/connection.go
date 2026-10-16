@@ -3,6 +3,7 @@ package tcp
 import (
 	"context"
 	"encoding/hex"
+	"io"
 	"net"
 	"strings"
 	"sync"
@@ -57,6 +58,11 @@ func (this *DeviceConnection) Key() string {
 	return this.key
 }
 
+// Done 在连接关闭时结束，供等待设备应答的上层命令及时退出。
+func (this *DeviceConnection) Done() <-chan struct{} {
+	return this.ctx.Done()
+}
+
 func (this *DeviceConnection) SetKey(key string) {
 	this.key = key
 }
@@ -73,6 +79,10 @@ func (this *DeviceConnection) RemoteAddr() string {
 func (this *DeviceConnection) Write(data []byte) (int, error) {
 	this.mu.Lock()
 	defer this.mu.Unlock()
+	if this.ctx.Err() != nil {
+		// 延迟发送模式下连接关闭后队列仍可能有容量，必须拒绝写入，避免把未发送命令误报成功。
+		return 0, net.ErrClosed
+	}
 
 	if this.server.config.MessageDelayTime == 0 {
 		log.Info("发送报文", this.zapFields(zap.String("data", utils.Bytes2Hex(data)))...)
@@ -101,7 +111,14 @@ func (this *DeviceConnection) Write(data []byte) (int, error) {
 }
 
 func (this *DeviceConnection) writeLoop() {
-	for msg := range this.msgQueue {
+	defer this.Close()
+	for {
+		var msg []byte
+		select {
+		case <-this.ctx.Done():
+			return
+		case msg = <-this.msgQueue:
+		}
 		// 确保距离上次发送至少 200ms
 		this.mu.Lock()
 		elapsed := time.Since(this.lastActiveTime)
@@ -109,16 +126,31 @@ func (this *DeviceConnection) writeLoop() {
 		if elapsed < delayTime {
 			waitTime := delayTime - elapsed
 			this.mu.Unlock()
-			time.Sleep(waitTime)
+			// 设备掉线时立即结束等待，不把待发送队列拖到下一个发送间隔。
+			timer := time.NewTimer(waitTime)
+			select {
+			case <-this.ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
 			this.mu.Lock()
+		}
+		if this.ctx.Err() != nil {
+			this.mu.Unlock()
+			return
 		}
 
 		// 发送消息
 		log.Info("发送报文", this.zapFields(zap.String("data", utils.Bytes2Hex(msg)))...)
-		_, err := this.conn.Write(msg)
+		n, err := this.conn.Write(msg)
+		if err == nil && n != len(msg) {
+			err = io.ErrShortWrite
+		}
 		if err != nil {
 			log.Error(errors.Wrapf(err, "发送报文失败: %s", err.Error()), this.zapFields(zap.String("data", utils.Bytes2Hex(msg)))...)
 			this.mu.Unlock()
+			// 写失败代表连接已不能可靠下发，关闭连接让扫描器和在线索引尽快清理。
 			return
 		}
 
@@ -155,16 +187,31 @@ func (this *DeviceConnection) SendCommand(cmd map[string]any) error {
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	_, err = this.Write(bs)
-	return err
+	n, err := this.Write(bs)
+	if err != nil {
+		return err
+	}
+	if n != len(bs) {
+		// 短写不能算命令已下发，否则上层会等待一个设备根本没有收到的应答。
+		return io.ErrShortWrite
+	}
+	return nil
 }
 
 func (this *DeviceConnection) Handle(result *core.ScanResult) error {
+	if result == nil {
+		return errors.New("接收到空的报文解析结果")
+	}
 	log.Info("接收报文", this.zapFields(zap.String("data", utils.Bytes2Hex(result.Packet)))...)
 
-	/// 检查是否是连接设备
-	this.setupDeviceSn(result)
-	this.UpdateActiveTime()
+	if !result.Abaddon {
+		// 解码可能在读出 SN 后才报错；保留已解析身份，否则同步心跳找不到连接对应的设备。
+		this.setupDeviceSn(result)
+	}
+	if !result.Abaddon && result.ScanError == nil {
+		// 只有完整解码成功的报文才刷新活动时间，避免坏帧让离线设备持续显示在线。
+		this.UpdateActiveTime()
+	}
 	if this.server.messageHandle != nil {
 		err := this.server.messageHandle(result)
 		if err != nil {

@@ -3,6 +3,7 @@ package tcp
 import (
 	"io"
 	"net"
+	"os"
 	"testing"
 	"time"
 )
@@ -11,9 +12,9 @@ import (
 // 只有显式设置环境变量才监听固定端口，避免普通测试运行时等待外部设备。
 // 手动运行：VPACKET_TCP_PROBE_3001=1 go test ./tcp -run '^TestManualTCPProbe3001$' -v -count=1 -timeout 3m
 func TestManualTCPProbe3001(t *testing.T) {
-	// if os.Getenv("VPACKET_TCP_PROBE_3001") != "1" {
-	// 	t.Skip("设置 VPACKET_TCP_PROBE_3001=1 后运行手动 TCP 探针")
-	// }
+	if os.Getenv("VPACKET_TCP_PROBE_3001") != "1" {
+		t.Skip("设置 VPACKET_TCP_PROBE_3001=1 后运行手动 TCP 探针")
+	}
 
 	listener, err := net.Listen("tcp", ":3001")
 	if err != nil {

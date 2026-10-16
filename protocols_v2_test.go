@@ -111,11 +111,11 @@ func newRSBoardResponseEncoder(t *testing.T) *Codec {
 	}
 	// 正式配置按 flow=decode 只消费设备上报字段；测试夹具需要先合成一帧 CC
 	// 字节流，因此仅在 command switch 内临时移除 decode 流程标记，不能污染正式配置。
-	switchStart := strings.Index(content, "      - type: \"switch\"")
+	switchStart := strings.Index(content, "        - type: \"switch\"\n          field: \"command\"")
 	if switchStart < 0 {
 		t.Fatal("未找到命令字段范围，无法构造设备 CC 回包测试夹具")
 	}
-	switchEnd := strings.Index(content[switchStart:], "        default_fields:")
+	switchEnd := strings.Index(content[switchStart:], "          default_fields:")
 	if switchEnd < 0 {
 		t.Fatal("未找到命令字段范围，无法构造设备 CC 回包测试夹具")
 	}
@@ -502,6 +502,34 @@ func TestRSBoardV2RejectsInvalidDataCRC(t *testing.T) {
 	packet[len(packet)-1] ^= 0xFF
 	if _, err := decodeRSBoardPacket(codec, packet); err == nil {
 		t.Fatal("篡改数据区后仍通过 CRC 校验")
+	}
+}
+
+func TestRSBoardV2StopsAfterErrorCode(t *testing.T) {
+	codec := newRSBoardV2Codec(t)
+	for _, tc := range []struct {
+		name      string
+		direction string
+		command   string
+		payload   []byte
+	}{
+		{"设备型号错误回包", "CC", "01", []byte{2}},
+		{"RTC 查询错误回包", "BB", "12", []byte{2}},
+		{"写入错误回包", "AA", "05", []byte{2}},
+		{"错误码后有多余字节", "CC", "01", []byte{2, 0xFF, 0xEE}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// 失败响应只保证包含应答码，继续读取成功分支字段会把正常错误帧误判成截断帧。
+			packet := rsBoardRawReply(t, tc.direction, tc.command, tc.payload)
+			decoded, err := decodeRSBoardPacket(codec, packet)
+			if err != nil {
+				t.Fatalf("错误应答帧解码失败: %v", err)
+			}
+			data, ok := decoded["data"].(map[string]any)
+			if !ok || !reflect.DeepEqual(data, rsData("code", uint64(2), "success", false)) {
+				t.Fatalf("错误应答不应读取后续业务字段: %#v", decoded["data"])
+			}
+		})
 	}
 }
 

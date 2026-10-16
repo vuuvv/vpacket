@@ -1,6 +1,7 @@
 package tcp
 
 import (
+	"errors"
 	"io"
 	"net"
 	"testing"
@@ -10,6 +11,44 @@ import (
 	"github.com/vuuvv/vpacket/log"
 	"go.uber.org/zap"
 )
+
+func TestInvalidPacketDoesNotIdentifyOrRefreshDevice(t *testing.T) {
+	server := NewTCPServer(&ServerConfig{}, nil)
+	serverConn, deviceConn := net.Pipe()
+	defer deviceConn.Close()
+	conn := NewDeviceConnection(server, serverConn)
+	defer conn.Close()
+	oldActiveTime := time.Now().Add(-time.Minute)
+	conn.lastActiveTime = oldActiveTime
+
+	// 解码失败时仍可能带有已解析的 SN；该报文不能作为设备在线证明。
+	err := conn.Handle(&core.ScanResult{
+		Data:      map[string]any{"sn": "board-1"},
+		ScanError: errors.New("CRC 校验失败"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if server.GetDeviceConnection("board-1") != nil {
+		t.Fatal("无效报文错误地把设备标为在线")
+	}
+	if !conn.GetLastActiveTime().Equal(oldActiveTime) {
+		t.Fatal("无效报文错误地刷新了设备活动时间")
+	}
+}
+
+func TestDelayedWriteRejectsClosedConnection(t *testing.T) {
+	server := NewTCPServer(&ServerConfig{MessageDelayTime: 20}, nil)
+	serverConn, deviceConn := net.Pipe()
+	defer deviceConn.Close()
+	conn := NewDeviceConnection(server, serverConn)
+	conn.Close()
+
+	// 掉线后将命令放入无人消费的队列会假报发送成功，调用方随后只能等应答超时。
+	if n, err := conn.Write([]byte{0xA1}); n != 0 || !errors.Is(err, net.ErrClosed) {
+		t.Fatalf("已关闭连接的延迟写入仍报告成功: n=%d err=%v", n, err)
+	}
+}
 
 func init() {
 	log.SetLogger(zap.NewNop())
