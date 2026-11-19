@@ -560,7 +560,7 @@ protocols:
                 - name: "data.cardNo"
                   flow: "decode"
                   type: "calc"
-                  formula: "int(fields.data.hid) == int(fields.data.pid) ? string(fields.data.pid) : string(fields.data.hid) + string(fields.data.pid)"
+                  formula: "fields.dataLen == 4 ? string(fields.data.pid) : string(fields.data.hid) + string(fields.data.pid)"
             - value: "19"
               fields:
                 # 文档把读取模式值列在下发参数栏，现场 BB 回包却带有当前模式字节；必须按回包解码。
