@@ -171,7 +171,7 @@ protocols:
         size: 1
         default: "00"
       - name: "data.success"
-        flow: "decode"
+        flow: "encode"
         type: "calc"
         formula: "true"
       # 非零应答码表示设备拒绝或执行失败；错误帧只保证有应答码，不能继续按成功响应格式读取。
@@ -560,7 +560,7 @@ protocols:
                 - name: "data.cardNo"
                   flow: "decode"
                   type: "calc"
-                  formula: "fields.dataLen == 4 ? string(fields.data.pid) : string(fields.data.hid) + string(fields.data.pid)"
+                  formula: "fields.data.hid==4 ? string(fields.data.pid) : string(fields.data.hid) + string(fields.data.pid)"
             - value: "19"
               fields:
                 # 文档把读取模式值列在下发参数栏，现场 BB 回包却带有当前模式字节；必须按回包解码。
